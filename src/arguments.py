@@ -49,3 +49,11 @@ def add_arguments(parser):
         action="store_true",
         help="Dump the agent to disk if training is interrupted",
     )
+
+    parser.add_argument(
+        "-sr",
+        "--save-results",
+        dest="save_results",
+        action="store_true",
+        help="Save results to disk",
+    )

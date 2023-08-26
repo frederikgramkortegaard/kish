@@ -6,6 +6,7 @@
 
 ## About
 ## Installation
+## Command Line Interface
 ## Classes
 ### ReinforcementTrainingOutput
 ### NetworkTrainingOutput

@@ -10,10 +10,12 @@ logger.debug("main message")
 
 import sys
 import os
+import gym
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agents.agent import Agent
 import train
 import torch.nn as nn
 import torch.optim as optim
@@ -35,18 +37,17 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
 
-    class TestAgent:
-        def train(self, episodes, render, *args, **kwargs):
-            for i in range(episodes):
-                yield [], [], [], [], [], [],
-
-    agent = TestAgent()
-
-    out = train.train_reinforcement_network(
-        agent,
-        10,
-        args,
-        config,
+    agent = Agent(
+        env=gym.make("CartPole-v1"),
+        n_inputs=4,
+        n_outputs=2,
+        lr=0.01,
+        gamma=0.9,
+        epsilon=1.0,
+        epsilon_decay=0.9995,
+        epsilon_min=0.01,
+        batch_size=32,
+        memory_size=10000,
     )
 
-    print(out)
+    output = train.train_reinforcement_network(agent, 1, args, config)

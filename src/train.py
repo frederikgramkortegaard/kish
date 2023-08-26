@@ -13,32 +13,6 @@ import configparser
 logger = logging.getLogger("root")
 
 
-def train_network(
-    network: torch.nn.Module,
-    X: List[Any],
-    y: List[int],
-    optimizer: torch.optim.Optimizer,
-    loss_fn: torch.nn.Module,
-    epochs: int,
-) -> torch.nn.Module:
-    """Train a network on the given dataset (X, y) and return the trained network. Can also be used to fine-tune a network."""
-
-    logger.debug("Training network...")
-
-    for epoch in range(epochs):
-        logger.debug(f"Epoch {epoch}...")
-        for i, x in enumerate(X):
-            y_pred = network(x)
-            loss = loss_fn(y_pred, y[i])
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-    logger.debug("Done training network.")
-
-    return network
-
-
 @dataclass
 class ReinforcementTrainingOutput:
     """Used to store the output of the reinforcement training process."""
@@ -46,20 +20,24 @@ class ReinforcementTrainingOutput:
     class Episode:
         """Contains information about a single episode."""
 
-        losses: np.ndarray
+        losses: Any
         states: np.ndarray
         actions: np.ndarray
         rewards: np.ndarray
         next_states: np.ndarray
         dones: np.ndarray
+        next_actions: np.ndarray
 
-        def __init__(self, states, actions, rewards, losses, next_states, dones):
-            self.losses = np.array(losses)
+        def __init__(
+            self, states, actions, rewards, losses, next_states, dones, next_actions
+        ):
+            self.losses = losses
             self.states = np.array(states)
             self.actions = np.array(actions)
             self.rewards = np.array(rewards)
             self.next_states = np.array(next_states)
             self.dones = np.array(dones)
+            self.next_action = np.array(next_actions)
 
     agent: object
     episodes: List[Episode]
@@ -82,6 +60,7 @@ def train_reinforcement_network(
             losses,
             next_states,
             dones,
+            next_action,
         ) in enumerate(agent.train(episodes, args.render)):
             logger.debug(f"Episode {episode}...")
 
@@ -90,9 +69,10 @@ def train_reinforcement_network(
                     states=np.array(states),
                     actions=np.array(actions),
                     rewards=np.array(rewards),
-                    losses=np.array(losses),
+                    losses=losses,
                     next_states=np.array(next_states),
                     dones=np.array(dones),
+                    next_actions=np.array(next_action),
                 )
             )
     except KeyboardInterrupt:
@@ -105,12 +85,39 @@ def train_reinforcement_network(
         logger.debug("If '--dump' was specified, the agent will be dumped to disk")
         if args.dump:
             logger.debug("Dumping agent...")
+
+            if not os.path.exists(config["DEFAULT"]["agent_dump_path"]):
+                os.makedirs(config["DEFAULT"]["agent_dump_path"])
+
             with open(
-                os.path.join(config["DEFAULT"]["agent_dump_path"], str(time.now())),
+                os.path.join(
+                    config["DEFAULT"]["agent_dump_path"],
+                    f"{str(time.time())}-{agent.name}-episode-{str(episode)}.pkl",
+                ),
                 "wb",
             ) as f:
                 pickle.dump(agent, f)
             logger.debug("Done dumping agent.")
+
+    if args.save_results:
+        logger.debug("Saving results to disk...")
+
+        if not os.path.exists(config["DEFAULT"]["results_dump_path"]):
+            os.makedirs(config["DEFAULT"]["results_dump_path"])
+
+        if output is None:
+            raise Exception("Output is None, cannot save results to disk.")
+
+        with open(
+            os.path.join(
+                config["DEFAULT"]["results_dump_path"],
+                str(time.time()) + "-" + agent.name + ".pkl",
+            ),
+            "wb",
+        ) as f:
+            pickle.dump(output, f)
+
+        logger.debug("Done saving results to disk.")
 
     logger.debug("Done training reinforcement network.")
 

@@ -1,4 +1,4 @@
-""" """
+""" Kish: A PyTorch-based neural network testing & Evaluation framework """
 
 import argparse
 import configparser
@@ -15,15 +15,13 @@ import gym
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.agent import Agent
+from agents.agent import *
 import train
-import torch.nn as nn
-import torch.optim as optim
 
 if __name__ == "__main__":
     # Setup argument parser
     parser = argparse.ArgumentParser(
-        description="Kish: A PyTorch-based neural network testing framework",
+        description="Kish: A PyTorch-based neural network testing & Evaluation framework",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -50,4 +48,6 @@ if __name__ == "__main__":
         memory_size=10000,
     )
 
-    output = train.train_reinforcement_network(agent, 1, args, config)
+    output = train.train_reinforcement_network(
+        agent=agent, episodes=1, args=args, config=config
+    )

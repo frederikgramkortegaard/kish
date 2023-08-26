@@ -49,10 +49,11 @@ def train_reinforcement_network(
     args: argparse.Namespace,
     config: configparser.ConfigParser,
 ) -> ReinforcementTrainingOutput:
-    logger.debug("Training reinforcement network...")
+    logger.info("Training reinforcement network...")
 
     output = ReinforcementTrainingOutput(agent=agent, episodes=[])
     try:
+        # Agents are required to yield these values every episode, values are allowed to be empty in case we don't care about losses or any other field.
         for episode, (
             states,
             actions,
@@ -62,17 +63,17 @@ def train_reinforcement_network(
             dones,
             next_action,
         ) in enumerate(agent.train(episodes, args.render)):
-            logger.debug(f"Episode {episode}...")
+            logger.info(f"Episode {episode}...")
 
             output.episodes.append(
                 ReinforcementTrainingOutput.Episode(
-                    states=np.array(states),
-                    actions=np.array(actions),
-                    rewards=np.array(rewards),
-                    losses=losses,
-                    next_states=np.array(next_states),
-                    dones=np.array(dones),
-                    next_actions=np.array(next_action),
+                    states=np.array(states) or [],
+                    actions=np.array(actions) or [],
+                    rewards=np.array(rewards) or [],
+                    losses=losses or [],
+                    next_states=np.array(next_states) or [],
+                    dones=np.array(dones) or [],
+                    next_actions=np.array(next_action) or [],
                 )
             )
     except KeyboardInterrupt:
@@ -82,11 +83,15 @@ def train_reinforcement_network(
         logger.debug("Training interrupted by exception")
         raise e
     finally:
-        logger.debug("If '--dump' was specified, the agent will be dumped to disk")
+        logger.info("If '--dump' was specified, the agent will be dumped to disk")
         if args.dump:
-            logger.debug("Dumping agent...")
+            logger.info("Dumping agent...")
 
             if not os.path.exists(config["DEFAULT"]["agent_dump_path"]):
+                logger.debug(
+                    "Agent dump path does not exist, creating directory at path"
+                )
+
                 os.makedirs(config["DEFAULT"]["agent_dump_path"])
 
             with open(
@@ -97,12 +102,13 @@ def train_reinforcement_network(
                 "wb",
             ) as f:
                 pickle.dump(agent, f)
-            logger.debug("Done dumping agent.")
+            logger.info("Done dumping agent.")
 
     if args.save_results:
-        logger.debug("Saving results to disk...")
+        logger.info("Saving results to disk...")
 
         if not os.path.exists(config["DEFAULT"]["results_dump_path"]):
+            logger.debug("Results dump path does not exist, creating directory at path")
             os.makedirs(config["DEFAULT"]["results_dump_path"])
 
         if output is None:
@@ -117,8 +123,8 @@ def train_reinforcement_network(
         ) as f:
             pickle.dump(output, f)
 
-        logger.debug("Done saving results to disk.")
+        logger.info("Done saving results to disk.")
 
-    logger.debug("Done training reinforcement network.")
+    logger.info("Done training reinforcement network.")
 
     return output

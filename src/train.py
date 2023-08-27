@@ -21,8 +21,6 @@ def train_reinforcement_network(
     logger.info("Training reinforcement network...")
     output = Reinforcement.TrainingOutput(agent=agent, episodes=[])
 
-    assert input.render == False
-
     try:
         # Agents are required to yield these values every episode, values are allowed to be empty in case we don't care about losses or any other field.
         for episode, (
@@ -33,7 +31,8 @@ def train_reinforcement_network(
             next_states,
             dones,
             next_action,
-        ) in enumerate(agent.train(input.num_episodes, input.render)):
+        ) in enumerate(agent.train(input.num_episodes, render=False)):
+            logging.info(f"Episode {episode}...")
             output.episodes.append(
                 Reinforcement.Episode(
                     states=np.array(states),

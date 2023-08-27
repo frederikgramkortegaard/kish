@@ -1,9 +1,8 @@
 """ Containers and dataclasses used throughout the project.
 """
 
-
-from dataclasses import dataclass
 import numpy as np
+from dataclasses import dataclass
 from typing import Any, List
 
 
@@ -34,6 +33,8 @@ class Reinforcement:
             self.next_action = np.array(next_actions)
 
     class TrainingOutput:
+        """Returned from the reinforcement training processes."""
+
         agent: object
         episodes: List["Episode"]
 
@@ -42,10 +43,12 @@ class Reinforcement:
             self.episodes = episodes
 
     class TrainingInput:
-        num_episodes: int
-        render: bool
+        """Configuration for the reinforcement training processes."""
 
-        def __init__(self, num_episodes, render: bool):
+        num_episodes: int
+        render: bool  # @TODO : would be _great_ to move this into live_reporting but that's gonna take a little bit of work
+
+        def __init__(self, num_episodes, render: bool = False):
             self.num_episodes = num_episodes
             self.render = render
 

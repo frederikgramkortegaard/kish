@@ -4,6 +4,7 @@ import sys
 import log
 import gym
 import time
+import pickle
 import hashlib
 import argparse
 import configparser
@@ -16,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents import DeepSARSA
 from classes import Reinforcement
-from graphing import live_report_reinforcement_agent
+from graphing import live_report_reinforcement_agent, report_reinforcement_agent
 from train import train_reinforcement_network, iterative_train_reinforcement_network
 
 
@@ -46,11 +47,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-lu",
-        "--live-update",
-        dest="live_update",
+        "-sr",
+        "--save-results",
+        dest="save_results",
         action="store_true",
-        help="Live update a graph of the agent's performance",
+        help="Save the results of the training process",
+        default=False,
     )
 
     args = parser.parse_args()
@@ -71,10 +73,30 @@ if __name__ == "__main__":
         memory_size=10000,
     )
 
-    # Create input to (non-exhaustive) train_reinforcement_network
-    output_generator = iterative_train_reinforcement_network(
+    #### == STATIC == ####
+
+    # Statically train a model and get the episodic outputs
+    output = train_reinforcement_network(
         agent=agent,
-        input=Reinforcement.TrainingInput(num_episodes=10, render=args.render),
+        input=Reinforcement.TrainingInput(num_episodes=50),
     )
 
-    live_report_reinforcement_agent(output_generator, config)
+    # Generate a graph from the output
+    report_reinforcement_agent(
+        input=output,
+        config=config,
+    )
+
+    #### == LIVE == ####
+
+    # Live update a graph from the iteratively generated output
+    output_generator = iterative_train_reinforcement_network(
+        agent=agent,
+        input=Reinforcement.TrainingInput(num_episodes=50),
+    )
+
+    # Iterate over the generator and generate a graph
+    live_report_reinforcement_agent(
+        generator=output_generator,
+        config=config,
+    )

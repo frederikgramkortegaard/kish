@@ -1,26 +1,24 @@
 """ Kish: A PyTorch-based neural network testing & Evaluation framework """
-# Sys settrace
+import os
+import sys
+import log
+import gym
+import time
+import hashlib
 import argparse
 import configparser
-
-import log
 
 logger = log.setup_custom_logger("root")
 logger.debug("main message")
 
-import sys
-import os
-import gym
-import time
-
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.agent import *
-from train import train_reinforcement_network
-from graphing import live_report_reinforcement_agent
-from versioning import verify_agent, name_agent
+from agents import DeepSARSA
 from classes import Reinforcement
+from graphing import live_report_reinforcement_agent
+from train import train_reinforcement_network, iterative_train_reinforcement_network
+
 
 if __name__ == "__main__":
     # Setup argument parser
@@ -29,17 +27,38 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Add arguments to argparser, done in a separate file to keep main.py clean
-    from arguments import add_arguments
+    parser.add_argument(
+        "-c",
+        "--config",
+        dest="config_file",
+        default="config.ini",
+        type=str,
+        help="Configuration file to use",
+    )
 
-    add_arguments(parser)
+    parser.add_argument(
+        "-r",
+        "--render",
+        dest="render",
+        action="store_true",
+        help="Render the environment for Reinforcement Learning Training",
+        default=False,
+    )
+
+    parser.add_argument(
+        "-lu",
+        "--live-update",
+        dest="live_update",
+        action="store_true",
+        help="Live update a graph of the agent's performance",
+    )
 
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
-    config.read("config.ini")
+    config.read(args.config_file)
 
-    agent = Agent(
+    agent = DeepSARSA(
         env=gym.make("CartPole-v1"),
         n_inputs=4,
         n_outputs=2,
@@ -52,19 +71,10 @@ if __name__ == "__main__":
         memory_size=10000,
     )
 
-    verify_agent(agent)
-    name_agent(agent)
-    print(agent.hashname)
-
-    # Create input to train_reinforcement_network
-    input = Reinforcement.TrainingInput(
-        num_episodes=100,
-        render=False,
+    # Create input to (non-exhaustive) train_reinforcement_network
+    output_generator = iterative_train_reinforcement_network(
+        agent=agent,
+        input=Reinforcement.TrainingInput(num_episodes=10, render=args.render),
     )
 
-    live_report_reinforcement_agent(
-        train_reinforcement_network(agent=agent, input=input, args=args, config=config),
-        args,
-        config,
-        agent.hashname,
-    )
+    live_report_reinforcement_agent(output_generator, config)

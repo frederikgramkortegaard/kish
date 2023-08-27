@@ -1,4 +1,5 @@
-""" """
+""" Containers and dataclasses used throughout the project.
+"""
 
 
 from dataclasses import dataclass
@@ -44,6 +45,8 @@ class Reinforcement:
         num_episodes: int
         render: bool
 
-        def __init__(self, num_episodes, render):
+        def __init__(self, num_episodes, render: bool):
             self.num_episodes = num_episodes
             self.render = render
+
+            assert self.num_episodes > 0

@@ -1,14 +1,17 @@
-""" Used to create graphs and live updates of the agent/network's performance"""
+""" Create graphs and live updates of the agent/network's performance"""
 
-import matplotlib.pyplot as plt
 import os
 import logging
+import matplotlib.pyplot as plt
 
-from disk import dump_graph
+from typing import *
+from classes import Reinforcement
 
 
 def live_report_reinforcement_agent(
-    generator, args, config, agent_hashname, moving_average_window=30
+    generator: Generator[Reinforcement.Episode, None, Reinforcement.TrainingOutput],
+    config: object,
+    moving_average_window: bool = 30,
 ):
     """Create and live-update a graph using the ReinforcementTrainingOutput data"""
 
@@ -22,54 +25,37 @@ def live_report_reinforcement_agent(
     episode_sums = []
     try:
         for enum, output in enumerate(generator):
+            plt.clf()
             plt.suptitle(f"Current Episode {enum}")
-            if len(output.rewards) != 0 and None not in output.rewards:
-                episode_sums.append(sum(output.rewards))
-                plt.subplot(211)
-                plt.plot(episode_sums)
-                plt.xlim(0, enum + 10)
-                plt.ylim(0, max(episode_sums) + 10)
-                plt.xlabel("Episode")
-                plt.ylabel("Reward")
+            episode_sums.append(sum(output.rewards))
 
-                # draw moving average
-                if len(episode_sums) > moving_average_window:
-                    plt.plot(
-                        [
-                            sum(episode_sums[i : i + moving_average_window])
-                            / moving_average_window
-                            for i in range(len(episode_sums) - moving_average_window)
-                        ],
-                        color="red",
-                    )
+            plt.plot(episode_sums)
 
-                    plt.legend(["Reward", "Moving Average"])
+            ## Setup
+            plt.xlim(0, enum + 10)
+            plt.ylim(0, max(episode_sums) + 10)
+            plt.xlabel("Episode")
+            plt.ylabel("Reward")
 
-            # if its not empty and does not contain none
-            if len(output.losses) != 0 and None not in output.losses:
-                plt.subplot(212)
-                plt.plot(output.losses)
-                plt.xlim(0, enum + 10)
-                plt.ylim(min(output.losses), max(output.losses))
-                plt.xlabel("Episode")
-                plt.ylabel("Loss")
+            # Moving Average
+            if len(episode_sums) > moving_average_window:
+                plt.plot(
+                    [
+                        sum(episode_sums[i : i + moving_average_window])
+                        / moving_average_window
+                        for i in range(len(episode_sums) - moving_average_window)
+                    ],
+                    color="red",
+                )
 
-                # Draw moving average
-                if len(output.losses) > moving_average_window:
-                    plt.plot(
-                        [
-                            sum(output.losses[i : i + moving_average_window])
-                            / moving_average_window
-                            for i in range(len(output.losses) - moving_average_window)
-                        ],
-                        color="red",
-                    )
-
-                    plt.legend(["Loss", "Moving Average"])
+                ## We put this here because if we placed it before the loop we wouldn't get the "Moving Average" label
+                plt.legend(
+                    ["Reward", f"Moving Average ({moving_average_window} episodes)"]
+                )
 
             plt.draw()
             plt.pause(0.00001)
-            plt.clf()
+        plt.show(block=True)
     except KeyboardInterrupt:
         logging.info("Live update interrupted by user")
         raise KeyboardInterrupt
@@ -77,7 +63,5 @@ def live_report_reinforcement_agent(
         logging.info("Live update interrupted by exception")
         raise e
     finally:
-        if args.save_figure:
-            logging.info("Saving figure to disk...")
-            dump_graph(config, agent_hashname, plt)
-            logging.info("Done saving figure to disk")
+        plt.show()
+        pass

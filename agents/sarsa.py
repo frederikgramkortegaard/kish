@@ -73,8 +73,6 @@ class Agent:
         memory_size,
     ):
         self.env = env
-        self.name = "Deep SARSA"
-        self.description = "Deep SARSA (Replay Buffer Off-Policy Variation) Agent"
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon
@@ -175,8 +173,9 @@ class Agent:
             dones = []
             next_actions = []
 
-            while not done or not truncated and render:
-                self.env.render()
+            while not done or not truncated:
+                if render:
+                    self.env.render()
 
                 next_state, reward, done, truncated = self.env.step(action)
 
@@ -197,12 +196,6 @@ class Agent:
 
                 episode_reward += reward
 
-            print(
-                "Episode: {}, Reward: {}, Epsilon: {}".format(
-                    episode, episode_reward, self.epsilon
-                )
-            )
-
             yield (
                 states,
                 actions,
@@ -212,13 +205,3 @@ class Agent:
                 dones,
                 next_actions,
             )
-
-            # for episode, (
-            # states,
-            # actions,
-            # rewards,
-            # losses,
-            # next_states,
-            # dones
-            #  next_action=np.array(next_action),
-            #

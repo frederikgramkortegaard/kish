@@ -1,7 +1,7 @@
 # Kish: A Comprehensive Deep- & Reinforcement Learning Testing & Evaluation Framework
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/frederikgramkortegaard/kish/blob/master/LICENSE)
-[![CodeQL](https://github.com/frederikgramkortegaard/kish/workflows/CodeQL/badge.svg)](https://github.com/frederikgram/https://github.com/frederikgramkortegaard/kish/actions?query=workflow%3ADependency+Review)
+[![CodeQL](https://github.com/frederikgramkortegaard/kish/workflows/CodeQL/badge.svg)](https://github.com/frederikgramkortegaard/kish/actions?query=workflow%3ADependency+Review)
 [![Dependency Review](https://github.com/frederikgramkortegaard/kish/workflows/Dependency%20Review/badge.svg)]()
 
 ## About

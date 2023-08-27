@@ -1,5 +1,7 @@
 import logging
 
+logging.getLogger("matplotlib.font_manager").disabled = True
+
 
 def setup_custom_logger(name):
     formatter = logging.Formatter(

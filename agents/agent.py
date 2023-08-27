@@ -74,6 +74,7 @@ class Agent:
     ):
         self.env = env
         self.name = "Deep SARSA"
+        self.description = "Deep SARSA (Replay Buffer Off-Policy Variation) Agent"
         self.lr = lr
         self.gamma = gamma
         self.epsilon = epsilon
@@ -174,9 +175,8 @@ class Agent:
             dones = []
             next_actions = []
 
-            while not done or not truncated:
-                if episode > 40:
-                    self.env.render()
+            while not done or not truncated and render:
+                self.env.render()
 
                 next_state, reward, done, truncated = self.env.step(action)
 

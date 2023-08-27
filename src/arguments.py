@@ -57,3 +57,19 @@ def add_arguments(parser):
         action="store_true",
         help="Save results to disk",
     )
+
+    parser.add_argument(
+        "-lu",
+        "--live-update",
+        dest="live_update",
+        action="store_true",
+        help="Live update a graph of the agent's performance",
+    )
+
+    parser.add_argument(
+        "-sf",
+        "--save-figure",
+        dest="save_figure",
+        action="store_true",
+        help="Save the figure to disk if live update is interrupted",
+    )

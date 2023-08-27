@@ -1,5 +1,5 @@
 """ Kish: A PyTorch-based neural network testing & Evaluation framework """
-
+# Sys settrace
 import argparse
 import configparser
 
@@ -11,12 +11,16 @@ logger.debug("main message")
 import sys
 import os
 import gym
+import time
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.agent import *
-import train
+from train import train_reinforcement_network
+from graphing import live_report_reinforcement_agent
+from versioning import verify_agent, name_agent
+from classes import Reinforcement
 
 if __name__ == "__main__":
     # Setup argument parser
@@ -48,6 +52,19 @@ if __name__ == "__main__":
         memory_size=10000,
     )
 
-    output = train.train_reinforcement_network(
-        agent=agent, episodes=1, args=args, config=config
+    verify_agent(agent)
+    name_agent(agent)
+    print(agent.hashname)
+
+    # Create input to train_reinforcement_network
+    input = Reinforcement.TrainingInput(
+        num_episodes=100,
+        render=False,
+    )
+
+    live_report_reinforcement_agent(
+        train_reinforcement_network(agent=agent, input=input, args=args, config=config),
+        args,
+        config,
+        agent.hashname,
     )

@@ -364,3 +364,8 @@ venv/
 # Log files
 *.log
 sweep/
+
+# Internal
+graphs/*
+results/*
+dumps/*

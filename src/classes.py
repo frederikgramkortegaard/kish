@@ -7,6 +7,11 @@ from typing import Any, List
 
 
 @dataclass
+class Network:
+    pass
+
+
+@dataclass
 class Reinforcement:
     """Used to store the output of the reinforcement training process."""
 
@@ -22,7 +27,14 @@ class Reinforcement:
         next_actions: np.ndarray
 
         def __init__(
-            self, states, actions, rewards, losses, next_states, dones, next_actions
+            self,
+            states,
+            actions,
+            rewards,
+            losses,
+            next_states,
+            dones,
+            next_actions,
         ):
             self.losses = losses
             self.states = np.array(states)

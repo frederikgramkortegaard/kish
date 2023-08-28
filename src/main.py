@@ -18,7 +18,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents import DeepSARSA
 from classes import Reinforcement
 from graphing import live_report_reinforcement_agent, report_reinforcement_agent
-from train import train_reinforcement_network, iterative_train_reinforcement_network
+from train import train_reinforcement_agent, iterative_train_reinforcement_agent
 
 
 if __name__ == "__main__":
@@ -46,15 +46,6 @@ if __name__ == "__main__":
         default=False,
     )
 
-    parser.add_argument(
-        "-sr",
-        "--save-results",
-        dest="save_results",
-        action="store_true",
-        help="Save the results of the training process",
-        default=False,
-    )
-
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
@@ -76,7 +67,7 @@ if __name__ == "__main__":
     #### == STATIC == ####
 
     # Statically train a model and get the episodic outputs
-    output = train_reinforcement_network(
+    output = train_reinforcement_agent(
         agent=agent,
         input=Reinforcement.TrainingInput(num_episodes=50),
     )
@@ -84,19 +75,17 @@ if __name__ == "__main__":
     # Generate a graph from the output
     report_reinforcement_agent(
         input=output,
-        config=config,
     )
 
     #### == LIVE == ####
 
     # Live update a graph from the iteratively generated output
-    output_generator = iterative_train_reinforcement_network(
+    output_generator = iterative_train_reinforcement_agent(
         agent=agent,
-        input=Reinforcement.TrainingInput(num_episodes=50),
+        input=Reinforcement.TrainingInput(num_episodes=500, render=args.render),
     )
 
     # Iterate over the generator and generate a graph
     live_report_reinforcement_agent(
         generator=output_generator,
-        config=config,
     )

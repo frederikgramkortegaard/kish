@@ -10,7 +10,6 @@ from classes import Reinforcement
 
 def report_reinforcement_agent(
     input: Reinforcement.TrainingOutput,
-    config: object,
     moving_average_window: bool = 30,
 ):
     """Create a graph showing the agent's performance over time"""
@@ -58,7 +57,6 @@ def report_reinforcement_agent(
 
 def live_report_reinforcement_agent(
     generator: Generator[Reinforcement.Episode, None, Reinforcement.TrainingOutput],
-    config: object,
     moving_average_window: bool = 30,
 ):
     """Create and live-update a graph using the ReinforcementTrainingOutput data"""
@@ -99,7 +97,7 @@ def live_report_reinforcement_agent(
                 )
 
             plt.draw()
-            plt.pause(0.00001)
+            plt.pause(0.000001)
         plt.show(block=True)
     except KeyboardInterrupt:
         logging.info("Live update interrupted by user")

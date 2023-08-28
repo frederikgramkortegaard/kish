@@ -15,7 +15,7 @@ from classes import Reinforcement
 logger = logging.getLogger("root")
 
 
-def train_reinforcement_network(
+def train_reinforcement_agent(
     agent: object, input: Reinforcement.TrainingInput
 ) -> Reinforcement.TrainingOutput:
     logger.info("Training reinforcement network...")
@@ -57,7 +57,7 @@ def train_reinforcement_network(
         return output
 
 
-def iterative_train_reinforcement_network(
+def iterative_train_reinforcement_agent(
     agent: object,
     input: Reinforcement.TrainingInput,
 ) -> Generator[Reinforcement.Episode, None, Reinforcement.TrainingOutput]:

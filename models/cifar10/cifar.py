@@ -182,101 +182,75 @@ class ResNet(nn.Module):
         return x
 
 
-# Define the transformation for the dataset
-transform = transforms.Compose(
-    [
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.RandomErasing(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]
-)
-transformtest = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ]
-)
+# # Define the transformation for the dataset
+# transform = transforms.Compose([
+#     transforms.RandomCrop(32, padding=4),
+#     transforms.RandomHorizontalFlip(),
+#     transforms.ToTensor(),
+#     transforms.RandomErasing(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ])
+# transformtest = transforms.Compose([
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ])
 
-# Load the CIFAR-10 dataset
-trainset = torchvision.datasets.CIFAR10(
-    root="./data", train=True, download=True, transform=transform
-)
-trainloader = torch.utils.data.DataLoader(
-    trainset, batch_size=128, shuffle=True, num_workers=8
-)
 
-testset = torchvision.datasets.CIFAR10(
-    root="./data", train=False, download=True, transform=transformtest
-)
-testloader = torch.utils.data.DataLoader(
-    testset, batch_size=128, shuffle=False, num_workers=8
-)
+# resnet = ResNet(56, 10)
 
-resnet = ResNet(56, 10)
+# # Define the loss function and optimizer
+# criterion = nn.CrossEntropyLoss()
+# optimizer = torch.optim.AdamW(resnet.parameters(), lr=0.003, weight_decay=1e-4)
+# scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [200, 350], 0.1)
 
-# Define the loss function and optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.AdamW(resnet.parameters(), lr=0.003, weight_decay=1e-4)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [200, 350], 0.1)
+# # Move the model to the GPU if available
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# resnet.to(device)
 
-# Move the model to the GPU if available
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-resnet.to(device)
+# # Training loop
+# for epoch in range(500):  # number of epochs
+#     resnet.train()
+#     running_loss = 0.0
+#     for i, data in enumerate(trainloader, 0):
+#         inputs, labels = data
+#         inputs, labels = inputs.to(device), labels.to(device)
 
-# Training loop
-for epoch in range(500):  # number of epochs
-    resnet.train()
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
+#         optimizer.zero_grad()
 
-        optimizer.zero_grad()
+#         outputs = resnet(inputs)
+#         loss = criterion(outputs, labels)
+#         loss.backward()
+#         optimizer.step()
+#         running_loss += loss.item()
+#     scheduler.step()
+#     print(f"Epoch {epoch + 1}, Loss: {running_loss / len(trainloader)}")
+#     # Test the model
+#     with torch.no_grad():
+#         resnet.eval()
+#         correct = 0
+#         total = 0
+#         for inputs, labels in testloader:
+#             inputs = inputs.to(device)
+#             labels = labels.to(device)
+#             outputs = resnet(inputs)
+#             _, predicted = torch.max(outputs.data, 1)
+#             total += labels.size(0)
+#             correct += (predicted == labels).sum().item()
 
-        outputs = resnet(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-    scheduler.step()
-    print(f"Epoch {epoch + 1}, Loss: {running_loss / len(trainloader)}")
-    # Test the model
-    with torch.no_grad():
-        resnet.eval()
-        correct = 0
-        total = 0
-        for inputs, labels in testloader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = resnet(inputs)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+#         print('Test Accuracy of the model on the 10000 test images: {} %'.format(100 * correct / total))
+# print("Finished Training")
 
-        print(
-            "Test Accuracy of the model on the 10000 test images: {} %".format(
-                100 * correct / total
-            )
-        )
-print("Finished Training")
+# # Test the model
+# with torch.no_grad():
+#     resnet.eval()
+#     correct = 0
+#     total = 0
+#     for inputs, labels in testloader:
+#         inputs = inputs.to(device)
+#         labels = labels.to(device)
+#         outputs = resnet(inputs)
+#         _, predicted = torch.max(outputs.data, 1)
+#         total += labels.size(0)
+#         correct += (predicted == labels).sum().item()
 
-# Test the model
-with torch.no_grad():
-    resnet.eval()
-    correct = 0
-    total = 0
-    for inputs, labels in testloader:
-        inputs = inputs.to(device)
-        labels = labels.to(device)
-        outputs = resnet(inputs)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-    print(
-        "Test Accuracy of the model on the 10000 test images: {} %".format(
-            100 * correct / total
-        )
-    )
+#     print('Test Accuracy of the model on the 10000 test images: {} %'.format(100 * correct / total))

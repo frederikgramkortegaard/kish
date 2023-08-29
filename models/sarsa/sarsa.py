@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from typing import Generator, List, Tuple
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu"
 
 
 class Network(nn.Module):
@@ -81,7 +81,7 @@ class Agent:
         self.batch_size = batch_size
         self.memory_size = memory_size
 
-        self.model = Network(n_inputs, n_outputs).to("cuda")
+        self.model = Network(n_inputs, n_outputs)
         self.loss_fn = nn.SmoothL1Loss()
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.lr, weight_decay=0.001

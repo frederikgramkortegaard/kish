@@ -366,6 +366,9 @@ venv/
 sweep/
 
 # Internal
-graphs/*
-results/*
-dumps/*
+
+tests/*/graphs/*
+tests/*/results/*
+tests/*/dumps/*
+tests/*/outputs/*
+data/*

@@ -1,4 +1,7 @@
-""" Training functions for networks and agents. """
+""" Training functions for networks and agents. 
+
+
+@TODO : split reinforcement and normal network logic in separate files"""
 import torch
 import logging
 import numpy as np
@@ -101,3 +104,18 @@ def iterative_train_reinforcement_agent(
         logger.info("Done training reinforcement network.")
 
         return output
+
+
+def run_reinforcement_agent(
+    agent: object, input: Reinforcement.RuntimeInput
+) -> Reinforcement.RuntimeOutput:
+    logger.info("Running reinforcement network...")
+    pass
+
+
+def iterative_run_reinforcement_agent(
+    agent: object,
+    input: Reinforcement.RuntimeInput,
+) -> Generator[Reinforcement.Episode, None, Reinforcement.RuntimeOutput]:
+    logger.info("Iteratively running reinforcement network...")
+    pass

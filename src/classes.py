@@ -65,3 +65,9 @@ class Reinforcement:
             self.render = render
 
             assert self.num_episodes > 0
+
+    class RuntimeInput:
+        pass
+
+    class RuntimeOutput:
+        pass

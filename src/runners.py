@@ -78,6 +78,8 @@ def train_network(
         raise KeyboardInterrupt
     except Exception as e:
         logger.debug("Training interrupted by exception")
+        logger.error(e)
+
         raise e
     finally:
         logger.info("Done training network.")
@@ -124,6 +126,8 @@ def train_reinforcement_agent(
         raise KeyboardInterrupt
     except Exception as e:
         logger.debug("Training interrupted by exception")
+        logger.error(e)
+
         raise e
     finally:
         logger.info("Done training reinforcement network.")
@@ -152,7 +156,7 @@ def iterative_train_reinforcement_agent(
             next_states,
             dones,
             next_action,
-        ) in enumerate(agent.train(input.num_episodes, input.render)):
+        ) in enumerate(agent.train(episodes=input.num_episodes, render=input.render)):
             logger.info(f"Episode {episode}...")
 
             output.episodes.append(
@@ -174,7 +178,7 @@ def iterative_train_reinforcement_agent(
         raise KeyboardInterrupt
     except Exception as e:
         logger.debug("Training interrupted by exception")
-        print(e)
+        logger.error(e)
         raise e
     finally:
         logger.info("Done training reinforcement network.")

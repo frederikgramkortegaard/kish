@@ -16,7 +16,7 @@ from src.runners import train_reinforcement_agent, iterative_train_reinforcement
 from src.utils import save_reinforcement_agent_output
 
 if __name__ == "__main__":
-    agent = Agent
+    agent = Agent()
 
     live_report_reinforcement_agent(
         iterative_train_reinforcement_agent(

@@ -19,7 +19,6 @@ from models.cifar10.cifar import ResNet
 
 
 if __name__ == "__main__":
-
     # Define the transformation for the dataset
     transform = transforms.Compose(
         [
@@ -103,6 +102,7 @@ if __name__ == "__main__":
             resnet.parameters(),
             **params,
         )
+
         input.scheduler = torch.optim.lr_scheduler.MultiStepLR(
             input.optimizer, [200, 350], 0.1
         )

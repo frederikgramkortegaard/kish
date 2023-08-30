@@ -174,6 +174,7 @@ def iterative_train_reinforcement_agent(
         raise KeyboardInterrupt
     except Exception as e:
         logger.debug("Training interrupted by exception")
+        print(e)
         raise e
     finally:
         logger.info("Done training reinforcement network.")

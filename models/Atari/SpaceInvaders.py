@@ -102,41 +102,41 @@ class f(nn.Module):
 
 
 class Network(nn.Module):
-    def __init__(self, inputs, actions):
+    def __init__(self, inputs, actions, frames):
         super(Network, self).__init__()
         self.input = inputs
         self.actions = actions
 
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=11, padding=5)
+        self.conv1 = nn.Conv2d(in_channels=frames, out_channels=32, kernel_size=11, padding=5)
         n = self.conv1.kernel_size[0] * self.conv1.kernel_size[1] * self.conv1.out_channels
         nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn1 = nn.BatchNorm2d(16)
+        self.bn1 = nn.BatchNorm2d(32)
 
-        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3)
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=7, padding=3)
         n = self.conv2.kernel_size[0] * self.conv2.kernel_size[1] * self.conv2.out_channels
         nn.init.normal_(self.conv2.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn2 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(64)
 
-        self.conv3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
         n = self.conv3.kernel_size[0] * self.conv3.kernel_size[1] * self.conv3.out_channels
         nn.init.normal_(self.conv3.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn3 = nn.BatchNorm2d(64)
+        self.bn3 = nn.BatchNorm2d(128)
 
-        self.conv4 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
         n = self.conv4.kernel_size[0] * self.conv4.kernel_size[1] * self.conv4.out_channels
         nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn4 = nn.BatchNorm2d(128)
+        self.bn4 = nn.BatchNorm2d(256)
 
         self.maxpool = nn.MaxPool2d(3)
         self.avgpool = nn.AvgPool2d(3)
 
         self.dropout = nn.Dropout(0.5)
         self.action = nn.Sequential(
-            nn.Linear(384, 384),
-            nn.LayerNorm(384),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
             f(),
             nn.Dropout(0.5),
-            nn.Linear(384, self.actions),
+            nn.Linear(256, self.actions),
         )
         for module in self.action:
             if isinstance(module, nn.LayerNorm):
@@ -149,27 +149,17 @@ class Network(nn.Module):
         self.to(device)
 
     def forward(self, states):
-        states = states.view(
-            states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3]
-        )
 
-        xs = []
-        i = 0
-        while i != states.shape[1]:
-            state = states[:, i, :, :]
-            x = self.dropout(self.maxpool(self.f(self.bn1(self.conv1(state)))))
-            x = self.dropout(self.maxpool(self.f(self.bn2(self.conv2(x)))))
-            x = self.dropout(self.maxpool(self.f(self.bn3(self.conv3(x)))))
-            x = self.dropout(self.avgpool(self.f(self.bn4(self.conv4(x)))))
-            xs.append(x.flatten(1))
-            i += 1
-        x = torch.stack(xs, dim=1).flatten(1)
+        x = self.dropout(self.maxpool(self.f(self.bn1(self.conv1(states)))))
+        x = self.dropout(self.maxpool(self.f(self.bn2(self.conv2(x)))))
+        x = self.dropout(self.maxpool(self.f(self.bn3(self.conv3(x)))))
+        x = self.dropout(self.avgpool(self.f(self.bn4(self.conv4(x))))).flatten(1)
 
         return self.action(x)
 
 
 class Agent:
-    def __init__(self, frames, n_step, batch_size, mem_size):
+    def __init__(self, frames, n_step, batch_size, mem_size, gamma):
         self.game = gym.make("SpaceInvaders-v0")
         state = cv2.resize(
             rgb2gray(crop(self.game.reset(), ((13, 13), (15, 25), (0, 0)))), (84, 84)
@@ -181,12 +171,12 @@ class Agent:
             device
         )
         self.eval_target = Network(
-            state.flatten().shape[0], self.game.action_space.n
+            state.flatten().shape[0], self.game.action_space.n, self.frames
         ).to(device)
         self.eval_target.load_state_dict(self.eval.state_dict())
 
         self.memory = ReplayMemory(
-            mem_size, batch_size, self.frames, state.shape[0], state.shape[1], n_step, 0.99
+            mem_size, batch_size, self.frames, state.shape[0], state.shape[1], n_step, gamma
         )
         self.optimizer = OrthAdam(self.eval.parameters(), lr=0.00003, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -203,7 +193,7 @@ class Agent:
             ]
         )
 
-        self.gamma = 0.99
+        self.gamma = gamma
         self.TAU = 0.0005
         self.epsilon = 0.99
 
@@ -295,7 +285,7 @@ class Agent:
                 if len(self.memory) > (self.memory.capacity) and render == True:
                     self.game.render()
 
-                if j % 3 == 0:
+                if j % self.frames == 0:
                     if (np.random.uniform(0, 1) >= self.epsilon) and len(
                         self.memory
                     ) > (self.memory.capacity):
@@ -332,7 +322,7 @@ class Agent:
 
                 self.memory.store_transition(state, next_state, action, reward, done)
 
-                if len(self.memory) > (self.memory.capacity) and j % 3 == 0:
+                if len(self.memory) > (self.memory.capacity) and j % self.frames == 0:
                     current_loss = self.update().item()
                     self.epsilon = max(self.epsilon * 0.999995, 0.01)
 

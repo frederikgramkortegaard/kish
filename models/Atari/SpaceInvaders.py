@@ -3,7 +3,6 @@ import torch.nn as nn
 import numpy as np
 import gym
 from skimage.color import rgb2gray
-from matplotlib import pyplot as plt
 from collections import deque
 import cv2
 import math
@@ -108,42 +107,36 @@ class Network(nn.Module):
         self.input = inputs
         self.actions = actions
 
-        self.features = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=11, padding=5),
-            nn.BatchNorm2d(16),
-            f(),
-            nn.MaxUnpool2d(3),
-            nn.Conv2d(
-                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=2
-            ),
-            nn.BatchNorm2d(32),
-            f(),
-            nn.MaxUnpool2d(3),
-            nn.Conv2d(
-                in_channels=32, out_channels=64, kernel_size=3, padding=2, groups=2
-            ),
-            nn.BatchNorm2d(64),
-            f(),
-            nn.Conv2d(
-                in_channels=64, out_channels=64, kernel_size=3, padding=2, groups=2
-            ),
-            nn.BatchNorm2d(64),
-            f(),
-            nn.AvgPool2d(3),
-        )
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=11, padding=5)
+        n = self.conv1.kernel_size[0] * self.conv1.kernel_size[1] * self.conv1.out_channels
+        nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+        self.bn1 = nn.BatchNorm2d(16)
 
-        for module in self.features:
-            if isinstance(module, nn.Conv2d):
-                n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))
+        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3)
+        n = self.conv2.kernel_size[0] * self.conv2.kernel_size[1] * self.conv2.out_channels
+        nn.init.normal_(self.conv2.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+        self.bn2 = nn.BatchNorm2d(32)
+
+        self.conv3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        n = self.conv3.kernel_size[0] * self.conv3.kernel_size[1] * self.conv3.out_channels
+        nn.init.normal_(self.conv3.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+        self.bn3 = nn.BatchNorm2d(64)
+
+        self.conv4 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        n = self.conv4.kernel_size[0] * self.conv4.kernel_size[1] * self.conv4.out_channels
+        nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+        self.bn4 = nn.BatchNorm2d(128)
+
+        self.maxpool = nn.MaxPool2d(3)
+        self.avgpool = nn.AvgPool2d(3)
 
         self.dropout = nn.Dropout(0.5)
         self.action = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
+            nn.Linear(384, 384),
+            nn.LayerNorm(384),
             f(),
-            nn.AlphaDropout(0.5),
-            nn.Linear(256, self.actions),
+            nn.Dropout(0.5),
+            nn.Linear(384, self.actions),
         )
         for module in self.action:
             if isinstance(module, nn.LayerNorm):
@@ -164,24 +157,25 @@ class Network(nn.Module):
         i = 0
         while i != states.shape[1]:
             state = states[:, i, :, :]
-            x = self.dropout(self.features(state))
+            x = self.dropout(self.maxpool(self.f(self.bn1(self.conv1(state)))))
+            x = self.dropout(self.maxpool(self.f(self.bn2(self.conv2(x)))))
+            x = self.dropout(self.maxpool(self.f(self.bn3(self.conv3(x)))))
+            x = self.dropout(self.avgpool(self.f(self.bn4(self.conv4(x)))))
             xs.append(x.flatten(1))
             i += 1
-        x = torch.stack(xs, dim=1)
-        print(x.shape)
-        input()
-        x = self.dropout(self.encoder(x))
-        return self.action(x[:, -1, :])
+        x = torch.stack(xs, dim=1).flatten(1)
+
+        return self.action(x)
 
 
 class Agent:
-    def __init__(self):
+    def __init__(self, frames, n_step, batch_size, mem_size):
         self.game = gym.make("SpaceInvaders-v0")
         state = cv2.resize(
             rgb2gray(crop(self.game.reset(), ((13, 13), (15, 25), (0, 0)))), (84, 84)
         )
         self.steps = 0
-        self.frames = 3
+        self.frames = frames
         self.game.seed(0)
         self.eval = Network(state.flatten().shape[0], self.game.action_space.n).to(
             device
@@ -191,12 +185,8 @@ class Agent:
         ).to(device)
         self.eval_target.load_state_dict(self.eval.state_dict())
 
-        model_parameters = filter(lambda p: p.requires_grad, self.eval.parameters())
-        params = sum([np.prod(p.size()) for p in model_parameters])
-        print(params)
-        input()
         self.memory = ReplayMemory(
-            50000, 16, self.frames, state.shape[0], state.shape[1], 12, 0.99
+            mem_size, batch_size, self.frames, state.shape[0], state.shape[1], n_step, 0.99
         )
         self.optimizer = OrthAdam(self.eval.parameters(), lr=0.00003, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -274,25 +264,8 @@ class Agent:
         return torch.FloatTensor(stacked_state), stacked_frames
 
     def train(self, episodes, render):
-        episode_avg_rew = []
-        episode_avg_loss = []
-        episode_counter = []
-        episode_avg_mean_action = []
-        episode_avg_std_action = []
-        episode_avg_mean = []
-        episode_avg_std = []
 
-        for i in range(episodes):
-            if i == 0:
-                i = 1
-            if self.epsilon == 1:
-                episode_avg_rew = []
-                episode_avg_loss = []
-                episode_counter = []
-                episode_avg_mean_action = []
-                episode_avg_std_action = []
-                episode_avg_mean = []
-                episode_avg_std = []
+        for _ in range(episodes):
 
             state = cv2.resize(
                 rgb2gray(crop(self.game.reset(), ((13, 13), (15, 25), (0, 0)))),
@@ -313,30 +286,24 @@ class Agent:
             done = False
             truncated = False
 
-            episode_reward = 0
-            episode_loss = 0
-            episode_mean_action = 0
-            episode_std_action = 0
-            episode_mean = 0
-            episode_std = 0
             self.lives = self.game.ale.lives()
             j = 0
-
+            rewards = []
+            losses = []
             while not done or not truncated:
-                if len(self.memory) > (50000) and render == True:
+                current_loss = 0
+                if len(self.memory) > (self.memory.capacity) and render == True:
                     self.game.render()
 
                 if j % 3 == 0:
                     if (np.random.uniform(0, 1) >= self.epsilon) and len(
                         self.memory
-                    ) > (50000):
+                    ) > (self.memory.capacity):
                         with torch.no_grad():
                             self.eval.eval()
                             action_choice = self.eval(
                                 torch.FloatTensor(state).unsqueeze_(0).to(device)
                             )
-                            episode_mean_action += torch.mean(action_choice).item()
-                            episode_std_action += torch.std(action_choice).item()
                             action = torch.argmax(action_choice).item()
                     else:
                         action_choice = np.random.normal(size=self.game.action_space.n)
@@ -346,6 +313,8 @@ class Agent:
                 true_reward = reward
 
                 reward = min(1, reward)
+
+                rewards.append(true_reward)
 
                 if self.lives > self.game.ale.lives():
                     reward -= 1
@@ -363,52 +332,23 @@ class Agent:
 
                 self.memory.store_transition(state, next_state, action, reward, done)
 
-                if len(self.memory) > (50) and j % 3 == 0:
-                    current_loss = self.update()
-                    episode_loss += current_loss.item()
+                if len(self.memory) > (self.memory.capacity) and j % 3 == 0:
+                    current_loss = self.update().item()
                     self.epsilon = max(self.epsilon * 0.999995, 0.01)
 
+                losses.append(current_loss)
                 state = next_state
 
-                episode_mean += torch.mean(self.eval.action[-1].weight).item()
-                episode_std += torch.std(self.eval.action[-1].weight).item()
-                episode_reward += true_reward
                 j += 1
 
             self.scheduler.step()
-            episode_avg_rew.append(episode_reward)
-            episode_avg_loss.append((episode_loss * 3) / j)
-            episode_avg_mean.append(episode_mean / j)
-            episode_avg_std.append(episode_std / j)
-            episode_avg_mean_action.append((episode_mean_action * 3) / j)
-            episode_avg_std_action.append((episode_std_action * 3) / j)
-            episode_counter.append(i)
-            print("episode")
-            print(i)
-            print("avg_reward")
-            print(sum(episode_avg_rew) / len(episode_avg_rew))
-            print("avg_loss")
-            print(sum(episode_avg_loss) / len(episode_avg_loss))
-            print("avg_mean")
-            print(sum(episode_avg_mean) / len(episode_avg_mean))
-            print("avg_std")
-            print(sum(episode_avg_std) / len(episode_avg_std))
-            print("avg_mean_action")
-            print(sum(episode_avg_mean_action) / len(episode_avg_mean_action))
-            print("avg_std_action")
-            print(sum(episode_avg_std_action) / len(episode_avg_std_action))
-            print("epsilon")
-            print(self.epsilon)
-            if i == 59999:
-                plt.plot(episode_counter, episode_avg_rew)
-                plt.show()
 
             yield (
-                state,
-                action,
-                reward,
-                current_loss,
-                next_state,
-                done,
+                None,
+                None,
+                rewards,
+                losses,
+                None,
+                None,
                 None,
             )

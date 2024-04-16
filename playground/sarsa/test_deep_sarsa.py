@@ -6,7 +6,6 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-
 # Meta
 from kish.classes import Reinforcement
 from kish.utils import save_reinforcement_agent_output
@@ -14,7 +13,6 @@ from kish.utils import save_reinforcement_agent_output
 # Model Specification
 from sarsa import Agent as DeepSARSA
 from Attention import agent as Agent2
-
 
 if __name__ == "__main__":
 

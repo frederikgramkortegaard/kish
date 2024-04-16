@@ -1,6 +1,9 @@
+
 import torch
 import math
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class SG(torch.optim.Optimizer):
     def __init__(self, params, lr=0.1):
         defaults = dict(lr=lr)

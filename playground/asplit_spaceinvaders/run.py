@@ -11,6 +11,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
+
 # Meta
 from kish.classes import Reinforcement
 from kish.graphing import live_report_reinforcement_agent

@@ -13,8 +13,7 @@ sys.path.append(
 
 # Meta
 from kish.classes import Reinforcement
-from kish.graphing import (
-    live_report_reinforcement_agent)
+from kish.graphing import live_report_reinforcement_agent
 
 from kish.runners import train_reinforcement_agent, iterative_train_reinforcement_agent
 from kish.utils import save_reinforcement_agent_output

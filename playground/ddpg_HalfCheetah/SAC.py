@@ -14,7 +14,6 @@ from modules.Optimizer import RNAdamWP, SGDNorm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
 # Initializes weights with orthonormal weights row-wise
 def Orthonorm_weight(weight):
     ones = (

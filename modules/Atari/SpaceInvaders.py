@@ -14,16 +14,28 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from models.Atari.Optimizer import OrthAdam
-from models.Atari.Attentionsplit import AttentionSplit
-from models.Atari.VBlinear import VBLinear
+from modules.Atari.Optimizer import OrthAdam
+from modules.Atari.Attentionsplit import AttentionSplit
+from modules.Atari.VBlinear import VBLinear
 
-device = torch.device("cuda")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # Class for storing transition memories
 # also includes functions for batching
 class ReplayMemory:
-    def __init__(self, capacity, batch_size, frames, height, width, n_step, gamma, hidden_dim, n_outputs):
+    def __init__(
+        self,
+        capacity,
+        batch_size,
+        frames,
+        height,
+        width,
+        n_step,
+        gamma,
+        hidden_dim,
+        n_outputs,
+    ):
         self.capacity = capacity
         self.mem_counter = 0
         self.mem_size = 0
@@ -41,7 +53,9 @@ class ReplayMemory:
         self.action_memory = torch.zeros(self.capacity, n_outputs, dtype=torch.float32)
         self.reward_memory = torch.zeros(self.capacity, dtype=torch.float32)
         self.done_memory = torch.zeros(self.capacity, dtype=torch.int32)
-        self.hidden_memmory = torch.zeros(self.capacity, frames, self.n_hidden, dtype=torch.float32).to(device)
+        self.hidden_memmory = torch.zeros(
+            self.capacity, frames, self.n_hidden, dtype=torch.float32
+        ).to(device)
         self.batch_size = batch_size
         self.n_mem = deque(maxlen=n_step)
         self.index = 0
@@ -74,8 +88,8 @@ class ReplayMemory:
         self.done_memory[self.index] = done
         self.hidden_memmory[self.index] = hidden
 
-        if self.size < self.capacity -1:
-            self.size +=1
+        if self.size < self.capacity - 1:
+            self.size += 1
             self.index += 1
         else:
             self.index = (self.index + 1) % self.capacity
@@ -91,12 +105,13 @@ class ReplayMemory:
             actions=self.action_memory[indices],
             rewards=self.reward_memory[indices],
             dones=self.done_memory[indices],
-            indices=indices, 
-            hiddens=self.hidden_memmory[indices]
+            indices=indices,
+            hiddens=self.hidden_memmory[indices],
         )
 
     def __len__(self):
         return self.size
+
 
 class Actor(nn.Module):
     def __init__(self, actions):
@@ -110,11 +125,15 @@ class Actor(nn.Module):
             nn.BatchNorm2d(16),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.Conv2d(
+                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8
+            ),
             nn.GroupNorm(8, 32),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.Conv2d(
+                in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16
+            ),
             nn.GroupNorm(16, 64),
             nn.GELU(),
             nn.MaxPool2d(3),
@@ -123,9 +142,9 @@ class Actor(nn.Module):
         for module in self.vision:
             if isinstance(module, nn.Conv2d):
                 n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
-        # Forward sequence 
+        # Forward sequence
         self.encoder = AttentionSplit(576, 576, 8)
 
         self.action = VBLinear(576, self.actions)
@@ -133,7 +152,9 @@ class Actor(nn.Module):
         self.to(device)
 
     def forward(self, states, hidden=None):
-        states = states.view(states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3])
+        states = states.view(
+            states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3]
+        )
         # Assuming states has shape (batch_size, num_frames, num_channels, height, width)
         batch_size, num_frames, _, _, _ = states.shape
 
@@ -144,11 +165,12 @@ class Actor(nn.Module):
 
         # Reshape back to (batch_size, num_frames, -1)
         x = x.view(batch_size, num_frames, -1)
-        
+
         x, c = self.encoder(x, hidden)
 
         return self.action(x[:, -1, :]), self.logstd.clamp(-11, 11).exp(), c
-    
+
+
 class Critic(nn.Module):
     def __init__(self, n_actions, hidden_dim, frames):
         super(Critic, self).__init__()
@@ -161,11 +183,15 @@ class Critic(nn.Module):
             nn.BatchNorm2d(16),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.Conv2d(
+                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8
+            ),
             nn.GroupNorm(8, 32),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.Conv2d(
+                in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16
+            ),
             nn.GroupNorm(16, 64),
             nn.GELU(),
             nn.MaxPool2d(3),
@@ -174,17 +200,17 @@ class Critic(nn.Module):
         for module in self.vision:
             if isinstance(module, nn.Conv2d):
                 n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         self.fc1 = nn.Linear(576 + n_actions, self.hidden_dim)
         n1 = self.fc1.weight.shape[1] * self.fc1.weight.shape[0]
-        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2/n1))
+        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2 / n1))
 
         self.layernorm1 = nn.LayerNorm(self.hidden_dim)
 
         self.fc2 = nn.Linear(self.hidden_dim, 1)
         n2 = self.fc2.weight.shape[1] * self.fc2.weight.shape[0]
-        nn.init.normal_(self.fc2.weight, 0, math.sqrt(2/n2))
+        nn.init.normal_(self.fc2.weight, 0, math.sqrt(2 / n2))
 
         self.f = nn.GELU()
 
@@ -196,7 +222,21 @@ class Critic(nn.Module):
 
 
 class Agent:
-    def __init__(self, frames, n_step, batch_size, mem_size, gamma, lr, weight_decay, n_outputs, hidden_dim, env, height, width):
+    def __init__(
+        self,
+        frames,
+        n_step,
+        batch_size,
+        mem_size,
+        gamma,
+        lr,
+        weight_decay,
+        n_outputs,
+        hidden_dim,
+        env,
+        height,
+        width,
+    ):
 
         self.env = env
         self.lr = lr
@@ -207,26 +247,64 @@ class Agent:
         self.tau = 0.005
         self.temp = nn.Parameter(torch.tensor(0.2))
         self.temp.to(device)
-        self.entropy_target = - torch.tensor(n_outputs)
+        self.entropy_target = -torch.tensor(n_outputs)
 
         self.actor = Actor(n_outputs).to(device)
-        self.optim1 = torch.optim.AdamW(self.actor.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
+        self.optim1 = torch.optim.AdamW(
+            self.actor.parameters(),
+            lr,
+            weight_decay=weight_decay,
+            amsgrad=True,
+        )
 
         self.critic1 = Critic(n_outputs, self.hidden_dim, frames).to(device)
         self.critic2 = Critic(n_outputs, self.hidden_dim, frames).to(device)
 
         self.critic1_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
         self.critic2_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
-        
+
         self.critic1_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.optim2 = torch.optim.AdamW(self.critic1.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
-        self.optim3 = torch.optim.AdamW(self.critic2.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
-        self.optim4 = torch.optim.AdamW([self.temp], lr, weight_decay=weight_decay, amsgrad=True)
-        self.memory = ReplayMemory(capacity=mem_size, batch_size=batch_size, frames=frames, n_step=n_step, hidden_dim=self.hidden_dim, gamma=self.gamma, height=height, width=width, n_outputs=n_outputs)
+        self.optim2 = torch.optim.AdamW(
+            self.critic1.parameters(),
+            lr,
+            weight_decay=weight_decay,
+            amsgrad=True,
+        )
+        self.optim3 = torch.optim.AdamW(
+            self.critic2.parameters(),
+            lr,
+            weight_decay=weight_decay,
+            amsgrad=True,
+        )
+        self.optim4 = torch.optim.AdamW(
+            [self.temp], lr, weight_decay=weight_decay, amsgrad=True
+        )
+        self.memory = ReplayMemory(
+            capacity=mem_size,
+            batch_size=batch_size,
+            frames=frames,
+            n_step=n_step,
+            hidden_dim=self.hidden_dim,
+            gamma=self.gamma,
+            height=height,
+            width=width,
+            n_outputs=n_outputs,
+        )
 
-    def update_critic_(self, critic, optim, state, action, reward, next_state, mask, a_log_prob, actions):
+    def update_critic_(
+        self,
+        critic,
+        optim,
+        state,
+        action,
+        reward,
+        next_state,
+        mask,
+        a_log_prob,
+        actions,
+    ):
 
         Q_values = critic(state, action)
 
@@ -240,7 +318,7 @@ class Agent:
             v = mask * (q - self.temp * a_log_prob)
             Q_target = reward + self.gamma * v
 
-        loss = torch.mean((Q_values - Q_target).pow(2)) # Equation 5 from SAC
+        loss = torch.mean((Q_values - Q_target).pow(2))  # Equation 5 from SAC
 
         optim.zero_grad()
         loss.backward()
@@ -252,7 +330,7 @@ class Agent:
         state = samples["states"].to(device)
         action = samples["actions"].to(device)
         next_state = samples["new_states"].to(device)
-        reward = samples["rewards"].view(-1,1).to(device)
+        reward = samples["rewards"].view(-1, 1).to(device)
         done = samples["dones"].view(-1, 1).to(device)
         hiddens = samples["hiddens"].to(device)
 
@@ -268,20 +346,44 @@ class Agent:
         actions_ = torch.tanh(u_)
         a_log_prob_ -= torch.log(1 - actions_**2 + 1e-8)
 
-        self.update_critic_(self.critic1, self.optim2, state, action, reward, next_state, mask, a_log_prob_.detach(), actions_.detach())
-        self.update_critic_(self.critic2, self.optim3, state, action, reward, next_state, mask, a_log_prob_.detach(), actions_.detach())
+        self.update_critic_(
+            self.critic1,
+            self.optim2,
+            state,
+            action,
+            reward,
+            next_state,
+            mask,
+            a_log_prob_.detach(),
+            actions_.detach(),
+        )
+        self.update_critic_(
+            self.critic2,
+            self.optim3,
+            state,
+            action,
+            reward,
+            next_state,
+            mask,
+            a_log_prob_.detach(),
+            actions_.detach(),
+        )
 
         q_1 = self.critic1(next_state, actions_)
         q_2 = self.critic2(next_state, actions_)
         q = torch.min(q_1, q_2)
 
-        loss = (self.temp.detach() * a_log_prob_ - q).mean()  # Update with equation 9 from SAC paper
+        loss = (
+            self.temp.detach() * a_log_prob_ - q
+        ).mean()  # Update with equation 9 from SAC paper
 
         self.optim1.zero_grad()
         loss.backward()
         self.optim1.step()
 
-        alpha_loss = (-self.temp * (a_log_prob_ + self.entropy_target).detach()).mean() # Update alpha / tempature parameter with equation 18 from SAC paper
+        alpha_loss = (
+            -self.temp * (a_log_prob_ + self.entropy_target).detach()
+        ).mean()  # Update alpha / tempature parameter with equation 18 from SAC paper
 
         self.optim4.zero_grad()
         alpha_loss.backward()
@@ -293,7 +395,7 @@ class Agent:
             target_param.data.copy_(
                 target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
             )
-        
+
         for eval_param, target_param in zip(
             self.critic2.parameters(), self.critic2_target.parameters()
         ):
@@ -302,7 +404,6 @@ class Agent:
             )
 
         return loss
-
 
     def stack_frames(self, stacked_frames, state, is_new_episode, max_frames):
         if is_new_episode:
@@ -322,7 +423,7 @@ class Agent:
             stacked_state = np.stack(stacked_frames, axis=0)
 
         return torch.FloatTensor(stacked_state), stacked_frames
-    
+
     def train(self, timesteps, render):
         t = 0
         rewards = []
@@ -351,32 +452,44 @@ class Agent:
             hiddens = torch.zeros((self.frames, self.hidden_dim)).to(device)
             prev_hiddens = hiddens.clone()
             while not done and not truncated:
-                
+
                 if j % 3 == 0:
                     with torch.no_grad():
                         self.actor.eval()
-                        a, std, hiddens = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0), hiddens)
+                        a, std, hiddens = self.actor(
+                            torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
+                        )
                         probs = dist.Normal(a, std)
                         u = probs.rsample()
                         action = torch.tanh(u)
                         self.actor.train()
-                    
+
                 if render and len(self.memory) > 1000:
                     self.env.render()
 
-                next_state, reward, done, truncated, _ = self.env.step(action.argmax(dim=-1).item())
+                next_state, reward, done, truncated, _ = self.env.step(
+                    action.argmax(dim=-1).item()
+                )
 
                 next_state, stacked_frames = self.stack_frames(
                     stacked_frames,
                     cv2.resize(
-                        rgb2gray(crop(next_state, ((13, 13), (15, 25), (0, 0)))), (84, 84)
+                        rgb2gray(crop(next_state, ((13, 13), (15, 25), (0, 0)))),
+                        (84, 84),
                     ),
                     False,
                     self.frames,
                 )
 
                 rewards.append(reward)
-                self.memory.store_transition(state=state, action=action, reward=reward, new_state=next_state, done=done, hidden=prev_hiddens)
+                self.memory.store_transition(
+                    state=state,
+                    action=action,
+                    reward=reward,
+                    new_state=next_state,
+                    done=done,
+                    hidden=prev_hiddens,
+                )
                 prev_hiddens = hiddens
 
                 if len(self.memory) > 1000 and j % 3 == 0:
@@ -397,7 +510,6 @@ class Agent:
                     yield (rewards, losses)
                     rewards = []
                     losses = []
-                
+
                 j += 1
                 t += 1
-

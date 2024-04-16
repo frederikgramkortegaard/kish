@@ -1,13 +1,14 @@
 """ Training functions for networks and agents.  """
+
 import torch
 import logging
 import numpy as np
 from typing import *
 from dataclasses import dataclass
 
-from src.classes import Network
-from src.classes import Reinforcement
-from src.log import setup_custom_logger
+from kish.classes import Network
+from kish.classes import Reinforcement
+from kish.log import setup_custom_logger
 
 logger = setup_custom_logger(__name__)
 

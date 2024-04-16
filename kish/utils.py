@@ -8,8 +8,8 @@ import json
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.log import setup_custom_logger
-from src.classes import Reinforcement, Network
+from kish.log import setup_custom_logger
+from kish.classes import Reinforcement, Network
 
 logger = setup_custom_logger(__name__)
 

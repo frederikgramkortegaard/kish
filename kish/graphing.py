@@ -9,8 +9,8 @@ import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.classes import Reinforcement, Network
-from src.log import setup_custom_logger
+from kish.classes import Reinforcement, Network
+from kish.log import setup_custom_logger
 
 logger = setup_custom_logger(__name__)
 
@@ -141,7 +141,7 @@ def live_report_reinforcement_agent(
 
             ## Setup
             plt.xlim(0, enum + 10)
-            plt.ylim(min(episode_sums) -10, max(episode_sums) + 10)
+            plt.ylim(min(episode_sums) - 10, max(episode_sums) + 10)
             plt.xlabel("1000 timesteps")
             plt.ylabel("Reward")
 
@@ -158,7 +158,10 @@ def live_report_reinforcement_agent(
 
                 ## We put this here because if we placed it before the loop we wouldn't get the "Moving Average" label
                 plt.legend(
-                    ["Reward", f"Moving Average ({moving_average_window} 1000 timesteps)"]
+                    [
+                        "Reward",
+                        f"Moving Average ({moving_average_window} 1000 timesteps)",
+                    ]
                 )
 
             plt.draw()

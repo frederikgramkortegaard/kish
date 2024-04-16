@@ -4,6 +4,9 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 # Variational Bayesian linear layer implementation
 class VBLinear(nn.Module):
 
@@ -14,17 +17,25 @@ class VBLinear(nn.Module):
         self.varsig = nn.Parameter(torch.ones(out_dim, in_dim))
         self.bias = nn.Parameter(torch.zeros(out_dim))
 
-        self.mu_w.data.zero_().normal_(0, 0.1) # Narrow normal dist
+        self.mu_w.data.zero_().normal_(0, 0.1)  # Narrow normal dist
         self.varsig.data.zero_().normal_(-9, 0.001)  # var init via Louizos
         self.bias.data.zero_()
         self.prior_prec = 10
 
-        self.to('cuda')
+        self.to(device)
 
     def KL(self):
 
         logsig2_w = self.varsig.clamp(-11, 11)
-        kl = (0.5 * ( self.prior_prec * (self.mu_w.pow(2) + logsig2_w.exp()) - logsig2_w - 1 - np.log(self.prior_prec)).mean())
+        kl = (
+            0.5
+            * (
+                self.prior_prec * (self.mu_w.pow(2) + logsig2_w.exp())
+                - logsig2_w
+                - 1
+                - np.log(self.prior_prec)
+            ).mean()
+        )
         return kl
 
     def forward(self, input):

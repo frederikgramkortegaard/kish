@@ -1,4 +1,5 @@
 """ Tests the ResNet model on Cifar10 with AdamW """
+
 import os
 import sys
 
@@ -6,17 +7,18 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from src.runners import train_network, test_network
-from src.classes import Network
-from models.cifar10.cifar import ResNet
-from models.Atari.Optimizer import SGDNorm
-from src.graphing import report_network_loss, save_network_loss_graph
-from src.utils import save_network_output, save_network_test_results
+from kish.runners import train_network, test_network
+from kish.classes import Network
+from modules.cifar10.cifar import ResNet
+from modules.Atari.Optimizer import SGDNorm
+from kish.graphing import report_network_loss, save_network_loss_graph
+from kish.utils import save_network_output, save_network_test_results
 import torch
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if __name__ == "__main__":
 
@@ -60,7 +62,7 @@ if __name__ == "__main__":
     input = Network.TrainingInput(
         trainloader=trainloader,
         epochs=4,
-        device="cuda",
+        device=device,
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
@@ -85,7 +87,7 @@ if __name__ == "__main__":
         network=resnet,
         input=Network.TestingInput(
             testloader=testloader,
-            device="cuda",
+            device=device,
         ),
     )
 

@@ -7,18 +7,17 @@ sys.path.append(
 )
 
 
-from src.classes import Reinforcement
-from models.sarsa.sarsa import Agent as DeepSARSA
-from models.sarsa.Attention import agent as Agent2
-from src.graphing import (
-    live_report_reinforcement_agent,
-    save_reinforcement_agent_rewards_graph,
-)
-from src.runners import train_reinforcement_agent, iterative_train_reinforcement_agent
-from src.utils import save_reinforcement_agent_output
+# Meta
+from kish.classes import Reinforcement
+from kish.utils import save_reinforcement_agent_output
+
+# Model Specification
+from sarsa import Agent as DeepSARSA
+from Attention import agent as Agent2
+
 
 if __name__ == "__main__":
-    
+
     envi = gym.make("CartPole-v1")
     agent = DeepSARSA(
         env=envi,
@@ -35,7 +34,7 @@ if __name__ == "__main__":
 
     for i in agent.train(40, True):
         l = i
-    
+
     k = []
     for i in agent.test(60, False):
         k.append(i)

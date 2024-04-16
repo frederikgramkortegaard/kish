@@ -14,9 +14,9 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Atari.Optimizer import OrthAdam
-from modules.Atari.Attentionsplit import AttentionSplit
-from modules.Atari.VBlinear import VBLinear
+from modules.Optimizer import OrthAdam
+from modules.Attentionsplit import AttentionSplit
+from modules.VBlinear import VBLinear
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

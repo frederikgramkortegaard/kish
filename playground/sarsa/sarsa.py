@@ -1,14 +1,19 @@
+""" Implementation of a Deep SARSA Agent to solve the CartPole-v1 environment. """
+
+import torch
 import numpy as np
 import torch.nn as nn
 import os 
+import math
 import sys
-import torch
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-device = torch.device("cuda")
+from modules.Optimizer import SGDNorm
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
@@ -22,8 +27,8 @@ class ReplayMemory:
                                      dtype=torch.float32).to(device)
         self.new_state_memory = torch.zeros((self.capacity, input),
                                          dtype=torch.float32).to(device)
-        self.action_memory = torch.zeros(self.capacity, 17, dtype=torch.float32).to(device)
-        self.next_action_memory = torch.zeros(self.capacity, 17, dtype=torch.float32).to(device)
+        self.action_memory = torch.zeros(self.capacity, dtype=torch.float32).to(device)
+        self.next_action_memory = torch.zeros(self.capacity, dtype=torch.float32).to(device)
         self.reward_memory = torch.zeros(self.capacity,  dtype=torch.float32).to(device)
         self.terminal_memory = torch.zeros(self.capacity, dtype=torch.float32).to(device)
         self.max_size = self.capacity
@@ -69,82 +74,46 @@ class ReplayMemory:
     def __len__(self):
         return self.size
     
+class func(nn.Module):
+    def __init__(self):
+        super(func, self).__init__()
 
-class Actor(nn.Module):
-    def __init__(self, n_inputs, n_outputs):
-        super(Actor, self).__init__()
+    def forward(self, input):
+        
+        return torch.where(input <= 1, torch.exp(input)-1, torch.log(input) + 1 + (1/math.sqrt(2)))
 
-        self.inputs = n_inputs
-        self.outputs = n_outputs
-        self.hidden_dim = 3 * n_inputs
+class Network(nn.Module):
+    def __init__(self, inputs, actions):
+        super(Network, self).__init__()
+        self.input = inputs
+        self.action = actions
 
-        self.fc1 = nn.Linear(self.inputs, self.hidden_dim)
-        nn.init.normal_(self.fc1.weight, 0, 0.1)
+        self.fc1 = nn.Linear(self.input, 256)
+        nn.init.normal_(self.fc1.weight, 0, 1/self.fc1.weight.numel())
         nn.utils.parametrizations.weight_norm(self.fc1)
 
-        self.layernorm1 = nn.LayerNorm(self.hidden_dim)
+        self.action = nn.Linear(256, self.action)
+        nn.init.normal_(self.action.weight, 0, 1/self.action.weight.numel())
+        nn.utils.parametrizations.weight_norm(self.action)
 
-        self.fc2 = nn.Linear(self.hidden_dim, self.hidden_dim)
-        nn.init.normal_(self.fc2.weight, 0, 0.1)
-        nn.utils.parametrizations.weight_norm(self.fc2)
+        self.layer_norm1 = nn.LayerNorm(256)
 
-        self.layernorm2 = nn.LayerNorm(self.hidden_dim)
+        self.SELU = func()
 
-        self.fc3 = nn.Linear(self.hidden_dim, self.outputs)
-        nn.init.normal_(self.fc3.weight, 0, 0.1)
-        nn.utils.parametrizations.weight_norm(self.fc3)
+    def forward(self, states):
+        x = self.SELU(self.layer_norm1(self.fc1(states)))
+        return self.action(x)
 
-        self.f = nn.GELU()
+class Agent:
+    """Deep SARSA (Replay Buffer Off-Policy Variation) Agent"""
 
-    def forward(self, state):
-        x = self.f(self.layernorm1(self.fc1(state)))
-        x = self.f(self.layernorm2(self.fc2(x)))
-
-        return self.fc3(x).clamp(-0.4, 0.4)
-    
-
-class Critic(nn.Module):
-    def __init__(self, n_inputs, n_actions):
-        super(Critic, self).__init__()
-
-        self.inputs = n_inputs
-        self.actions = n_actions
-        self.hidden_dim = 3 * n_inputs
-
-        self.fc1 = nn.Linear(self.inputs, self.hidden_dim)
-        nn.init.normal_(self.fc1.weight, 0, 0.1)
-        nn.utils.parametrizations.weight_norm(self.fc1)
-
-        self.layernorm1 = nn.LayerNorm(self.hidden_dim)
-
-        self.fc2 = nn.Linear(self.actions, self.hidden_dim)
-        nn.init.normal_(self.fc2.weight, 0, 0.1)
-        nn.utils.parametrizations.weight_norm(self.fc2)
-
-        self.layernorm2 = nn.LayerNorm(self.hidden_dim)
-
-        self.fc3 = nn.Linear(2 * self.hidden_dim, 1)
-        nn.init.normal_(self.fc3.weight, 0, 0.1)
-        nn.utils.parametrizations.weight_norm(self.fc3)
-
-        self.f = nn.GELU()
-
-    def forward(self, state, actions):
-        x1 = self.f(self.layernorm1(self.fc1(state)))
-        x2 = self.f(self.layernorm1(self.fc2(actions)))
-
-        x = torch.cat((x1, x2), dim=1)
-        return self.fc3(x)
-    
-
-class Agent():
     def __init__(
-        self, 
+        self,
         env,
-        lr,
-        gamma,
         n_inputs,
         n_outputs,
+        lr,
+        gamma,
         epsilon,
         epsilon_decay,
         epsilon_min,
@@ -160,29 +129,16 @@ class Agent():
         self.batch_size = batch_size
         self.memory_size = memory_size
 
-        self.tau = 0.005
-
-        self.actor1 = Actor(n_inputs, n_outputs).to(device)
-        self.actor2 = Actor(n_inputs, n_outputs).to(device)
-        self.actor2.load_state_dict(self.actor1.state_dict())
-
-        self.optim1 = torch.optim.AdamW(self.actor1.parameters(), lr, weight_decay=1e-4)
-
-        self.critic1 = Critic(n_inputs, n_outputs).to(device)
-        self.critic2 = Critic(n_inputs, n_outputs).to(device)
-        self.critic2.load_state_dict(self.critic1.state_dict())
-
-        self.optim2 = torch.optim.AdamW(self.critic1.parameters(), lr*0.1, weight_decay=1e-4)
-        self.memory = ReplayMemory(memory_size, 32, n_inputs)
+        self.model = Network(n_inputs, n_outputs).to(device)
+        self.loss_fn = nn.SmoothL1Loss()
+        self.optimizer = SGDNorm(self.model.parameters(), lr=0.1, weight_decay=1e-4)
+        self.memory = ReplayMemory(memory_size, 256, n_inputs)
 
     def update(self):
 
-        self.actor1.train()
-        self.critic1.eval()
-
         samples = self.memory.sample_batch()
         state = samples["states"]
-        action = samples["actions"]
+        action = samples["actions"].view(-1,1)
         next_state = samples["new_states"]
         reward = samples["rewards"].view(-1,1)
         next_action = samples["next_actions"].view(-1,1)
@@ -190,48 +146,19 @@ class Agent():
 
         mask = 1 - done
         
+        Q_value = self.model(state).gather(1, action.long())
 
-        actions = self.actor1(state)
-        Q_values = self.critic1(state, actions)
-        loss = torch.mean(-Q_values)
+        Q_next = self.model(next_state).gather(1, next_action.long()).detach()
 
-        self.optim1.zero_grad()
-        loss.backward()
-        self.optim1.step()
+        Q_target = reward + (self.gamma * Q_next * mask).detach()
 
-
-        self.actor1.eval()
-        self.actor2.eval()
-
-        self.critic1.train()
-        self.critic2.train()
-
-        Q = self.critic1(state, action)
-        A = self.actor2(next_state).detach()
-        Q_n = self.critic2(next_state, A).detach()
-        Q_t = reward + (Q_n * mask * self.gamma)
-
-        critic_loss = torch.mean((Q_t - Q).pow(2))
-
-        self.optim2.zero_grad()
-        critic_loss.backward()
-        self.optim2.zero_grad()
-
-        for eval_param, target_param in zip(
-            self.actor1.parameters(), self.actor2.parameters()
-        ):
-            target_param.data.copy_(
-                target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
-            )
+        loss = (Q_value - Q_target).pow(2).mean()
         
-        for eval_param, target_param in zip(
-            self.critic1.parameters(), self.critic2.parameters()
-        ):
-            target_param.data.copy_(
-                target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
-            )
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
-        return critic_loss
+        return loss.item()
 
     def train(self, episodes, render):
         for e in range(episodes):
@@ -241,7 +168,9 @@ class Agent():
             state = self.env.reset()
             if (np.random.uniform(0, 1) >= self.epsilon):
                 with torch.no_grad():
-                    action = self.actor1(torch.FloatTensor(state).to(device))
+                        self.model.eval()
+                        action = torch.argmax(self.model(torch.FloatTensor(state).to(device))).item()
+                        self.model.train()
             else:
                 action = self.env.action_space.sample()
             episode_reward = 0
@@ -258,10 +187,7 @@ class Agent():
                 if render and len(self.memory) >= self.memory.capacity -1:
                     self.env.render()
 
-                if isinstance(action, torch.Tensor):
-                    next_state, reward, done, truncated = self.env.step(action.detach().cpu().resolve_conj().resolve_neg().numpy())
-                else:
-                    next_state, reward, done, truncated = self.env.step(action)
+                next_state, reward, done, truncated = self.env.step(action)
 
                 states.append(state)
                 actions.append(action)
@@ -271,7 +197,9 @@ class Agent():
 
                 if (np.random.uniform(0, 1) >= self.epsilon):
                     with torch.no_grad():
-                        next_action = self.actor1(torch.FloatTensor(next_state).to(device))
+                        self.model.eval()
+                        next_action = torch.argmax(self.model(torch.FloatTensor(next_state).to(device))).item()
+                        self.model.train()
                 else:
                     next_action = self.env.action_space.sample()
                 next_actions.append(next_action)
@@ -279,7 +207,7 @@ class Agent():
 
                 if len(self.memory) >= self.memory.capacity -1:
                     loss = self.update()
-                    self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
+                    self.epsilon = max(self.epsilon * 0.99, 0.01)
                 else:
                     loss = 1
                 losses.append(loss)
@@ -288,9 +216,8 @@ class Agent():
 
                 episode_reward += reward
 
-            print(episode_reward)
-            print(self.epsilon)
             print(e)
+            print(episode_reward)
             yield (
                 states,
                 actions,
@@ -310,7 +237,9 @@ class Agent():
             state = self.env.reset()
             if (np.random.uniform(0, 1) >= self.epsilon):
                 with torch.no_grad():
-                    action = self.actor1(torch.FloatTensor(state).to(device))
+                        self.model.eval()
+                        action = torch.argmax(self.model(torch.FloatTensor(state).to(device))).item()
+                        self.model.train()
             else:
                 action = self.env.action_space.sample()
             episode_reward = 0
@@ -327,10 +256,7 @@ class Agent():
                 if render:
                     self.env.render()
 
-                if isinstance(action, torch.Tensor):
-                    next_state, reward, done, truncated = self.env.step(action.detach().cpu().resolve_conj().resolve_neg().numpy())
-                else:
-                    next_state, reward, done, truncated = self.env.step(action)
+                next_state, reward, done, truncated = self.env.step(action)
 
                 states.append(state)
                 actions.append(action)
@@ -340,7 +266,9 @@ class Agent():
 
                 if (np.random.uniform(0, 1) >= self.epsilon):
                     with torch.no_grad():
-                        next_action = self.actor1(torch.FloatTensor(next_state).to(device))
+                        self.model.eval()
+                        next_action = torch.argmax(self.model(torch.FloatTensor(next_state).to(device))).item()
+                        self.model.train()
                 else:
                     next_action = self.env.action_space.sample()
                 next_actions.append(next_action)
@@ -359,3 +287,5 @@ class Agent():
                 dones,
                 next_actions,
             )
+
+

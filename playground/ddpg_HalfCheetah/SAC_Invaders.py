@@ -13,8 +13,8 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Atari.Attentionsplit import AttentionSplit
-from modules.Atari.Optimizer import AdamP2
+from modules.Attentionsplit import AttentionSplit
+from modules.Optimizer import AdamP2
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning

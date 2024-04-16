@@ -1,5 +1,9 @@
 """ Tests the ResNet model on Cifar10 with AdamW """
 
+import torch
+import torchvision
+import torchvision.transforms as transforms
+import torch.nn as nn
 import os
 import sys
 
@@ -7,16 +11,15 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
+# Meta
 from kish.runners import train_network, test_network
 from kish.classes import Network
-from modules.cifar10.cifar import ResNet
-from modules.Atari.Optimizer import SGDNorm
 from kish.graphing import report_network_loss, save_network_loss_graph
 from kish.utils import save_network_output, save_network_test_results
-import torch
-import torchvision
-import torchvision.transforms as transforms
-import torch.nn as nn
+
+# Model Specifications
+from modules.ResNet import ResNet
+from modules.Optimizer import SGDNorm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

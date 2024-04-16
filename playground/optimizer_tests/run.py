@@ -21,9 +21,7 @@ from kish.graphing import save_network_loss_graph
 from kish.utils import save_network_output, save_network_test_results, get_unique_id
 
 # Model Specification
-
 from model import ResNet
-
 
 if __name__ == "__main__":
     # Define the transformation for the dataset

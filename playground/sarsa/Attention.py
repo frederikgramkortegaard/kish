@@ -12,7 +12,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from modules.Attentionsplit import AttentionSplit
 
-
 class network(nn.Module):
     def __init__(self, heads, hidden_layers, inputs, outputs):
         super(network, self).__init__()

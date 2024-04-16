@@ -20,7 +20,7 @@ from modules.Optimizer import (
     SG,
 )
 
-device = torch.device("cuda")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # Initializes weights with orthonormal weights row-wise

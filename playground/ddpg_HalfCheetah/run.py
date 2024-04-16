@@ -7,7 +7,6 @@ sys.path.append(
 )
 
 # Meta
-
 from kish.classes import Reinforcement
 from kish.graphing import (
     live_report_reinforcement_agent,
@@ -17,8 +16,6 @@ from kish.runners import train_reinforcement_agent, iterative_train_reinforcemen
 from kish.utils import save_reinforcement_agent_output
 
 # Model Specification
-
-# from modules.Mujoco.SAC import Agent as SAC_agent
 from SAC import Agent as SAC_agent
 
 if __name__ == "__main__":

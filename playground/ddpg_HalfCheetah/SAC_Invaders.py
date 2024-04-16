@@ -1,6 +1,6 @@
 import numpy as np
 import torch.nn as nn
-import os 
+import os
 import sys
 import cv2
 from skimage.util import crop
@@ -9,13 +9,17 @@ import torch
 import math
 import torch.distributions as dist
 from collections import deque
+
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
 from modules.Attentionsplit import AttentionSplit
 from modules.Optimizer import AdamP2
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
 class ReplayMemory:
@@ -31,17 +35,20 @@ class ReplayMemory:
         self.new_state_memory = torch.zeros(
             (self.capacity, frames, height, width), dtype=torch.float32
         )
-        self.action_memory = torch.zeros(self.capacity, 6, dtype=torch.float32).to(device)
-        self.reward_memory = torch.zeros(self.capacity,  dtype=torch.float32).to(device)
-        self.terminal_memory = torch.zeros(self.capacity, dtype=torch.float32).to(device)
+        self.action_memory = torch.zeros(self.capacity, 6, dtype=torch.float32).to(
+            device
+        )
+        self.reward_memory = torch.zeros(self.capacity, dtype=torch.float32).to(device)
+        self.terminal_memory = torch.zeros(self.capacity, dtype=torch.float32).to(
+            device
+        )
         self.max_size = self.capacity
         self.batch_size = batch_size
         self.index = 0
-        self.size = 0 
+        self.size = 0
         self.n_mem = deque(maxlen=n_step)
 
-
-    # Stores a transition, while checking for the n-step value passed 
+    # Stores a transition, while checking for the n-step value passed
     # if the n-step buffer is not larger than n, we only store the transition there
     def store_transition(self, state, action, reward, state_, done):
 
@@ -55,12 +62,11 @@ class ReplayMemory:
         for rew in temp:
             reward = reward + self.gamma * rew
 
-        
         state = torch.tensor(state).to(device)
         action = torch.tensor(action).to(device)
         reward = torch.tensor(reward).to(device)
         state_ = torch.tensor(state_).to(device)
-        
+
         if done == False:
             done = 0
         else:
@@ -72,21 +78,27 @@ class ReplayMemory:
         self.new_state_memory[self.index] = state_
         self.reward_memory[self.index] = reward
         self.terminal_memory[self.index] = done
-        
+
         self.index = (self.index + 1) % self.capacity
-        self.size +=1
+        self.size += 1
 
     # returns a random sample using indexes
     def sample_batch(self):
 
         indices = np.random.choice(self.capacity, size=self.batch_size, replace=False)
 
-        return dict ( states=self.state_memory[indices], actions=self.action_memory[indices], new_states=self.new_state_memory[indices],
-                      rewards = self.reward_memory[indices], dones=self.terminal_memory[indices], indices = indices, )
+        return dict(
+            states=self.state_memory[indices],
+            actions=self.action_memory[indices],
+            new_states=self.new_state_memory[indices],
+            rewards=self.reward_memory[indices],
+            dones=self.terminal_memory[indices],
+            indices=indices,
+        )
 
     def __len__(self):
         return self.size
-    
+
 
 class Actor(nn.Module):
     def __init__(self, actions):
@@ -100,11 +112,15 @@ class Actor(nn.Module):
             nn.BatchNorm2d(16),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.Conv2d(
+                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8
+            ),
             nn.GroupNorm(8, 32),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.Conv2d(
+                in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16
+            ),
             nn.GroupNorm(16, 64),
             nn.GELU(),
             nn.MaxPool2d(3),
@@ -113,12 +129,12 @@ class Actor(nn.Module):
         for module in self.vision:
             if isinstance(module, nn.Conv2d):
                 n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         self.dropout = nn.Dropout(0.5)
         self.input_dropout = nn.Dropout(0.2)
 
-        # Forward sequence 
+        # Forward sequence
         self.forward_one = AttentionSplit(576, 576, 8)
         self.forward_two = AttentionSplit(576, 576, 8)
 
@@ -127,23 +143,28 @@ class Actor(nn.Module):
         self.to(device)
 
     def forward(self, states):
-        states = states.view(states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3])
+        states = states.view(
+            states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3]
+        )
         # Assuming states has shape (batch_size, num_frames, num_channels, height, width)
         batch_size, num_frames, _, _, _ = states.shape
 
         # Reshape states to combine batch_size and num_frames dimensions
-        states = self.input_dropout(states.view(-1, states.shape[2], states.shape[3], states.shape[4]))
+        states = self.input_dropout(
+            states.view(-1, states.shape[2], states.shape[3], states.shape[4])
+        )
 
         x = self.dropout(self.vision(states))
 
         # Reshape back to (batch_size, num_frames, -1)
         x = x.view(batch_size, num_frames, -1)
-        
+
         x, c = self.forward_one(x)
         x, _ = self.forward_two(x, c)
         x = self.dropout(x[:, -1, :])
 
         return self.action(x), torch.exp(self.logstd)
+
 
 class Critic(nn.Module):
     def __init__(self, actions):
@@ -155,11 +176,15 @@ class Critic(nn.Module):
             nn.BatchNorm2d(16),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.Conv2d(
+                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8
+            ),
             nn.GroupNorm(8, 32),
             nn.GELU(),
             nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.Conv2d(
+                in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16
+            ),
             nn.GroupNorm(16, 64),
             nn.GELU(),
             nn.MaxPool2d(3),
@@ -168,12 +193,12 @@ class Critic(nn.Module):
         for module in self.vision:
             if isinstance(module, nn.Conv2d):
                 n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         self.dropout = nn.Dropout(0.5)
         self.input_dropout = nn.Dropout(0.2)
 
-        # Forward sequence 
+        # Forward sequence
         self.forward_one = AttentionSplit(576, 576, 8)
         self.forward_two = AttentionSplit(576, 576, 8)
 
@@ -184,18 +209,22 @@ class Critic(nn.Module):
         self.to(device)
 
     def forward(self, states, actions):
-        states = states.view(states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3])
+        states = states.view(
+            states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3]
+        )
         # Assuming states has shape (batch_size, num_frames, num_channels, height, width)
         batch_size, num_frames, _, _, _ = states.shape
 
         # Reshape states to combine batch_size and num_frames dimensions
-        states = self.input_dropout(states.view(-1, states.shape[2], states.shape[3], states.shape[4]))
+        states = self.input_dropout(
+            states.view(-1, states.shape[2], states.shape[3], states.shape[4])
+        )
 
         x = self.dropout(self.vision(states))
 
         # Reshape back to (batch_size, num_frames, -1)
         x = x.view(batch_size, num_frames, -1)
-        
+
         x, c = self.forward_one(x)
         x, _ = self.forward_two(x, c)
         x = self.dropout(x[:, -1, :])
@@ -203,11 +232,11 @@ class Critic(nn.Module):
         x2 = self.action(actions)
         x = torch.cat((x, x2), dim=1)
         return self.final(x)
-    
 
-class Agent():
+
+class Agent:
     def __init__(
-        self, 
+        self,
         env,
         lr,
         gamma,
@@ -237,7 +266,7 @@ class Agent():
         self.tau = 0.005
         self.temp = nn.parameter.Parameter(torch.tensor(0.2))
         self.temp.to(device)
-        self.entropy_target = - torch.tensor(env.action_space.n)
+        self.entropy_target = -torch.tensor(env.action_space.n)
 
         self.actor = Actor(env.action_space.n).to(device)
         self.optim1 = AdamP2(self.actor.parameters(), lr, weight_decay=weight_decay)
@@ -252,7 +281,15 @@ class Agent():
         self.optim2 = AdamP2(self.critic1.parameters(), lr, weight_decay=weight_decay)
         self.optim3 = AdamP2(self.critic2.parameters(), lr, weight_decay=weight_decay)
         self.optim4 = AdamP2([self.temp], lr, weight_decay=weight_decay)
-        self.memory = ReplayMemory(memory_size, batch_size, frames, state.shape[0], state.shape[1], n_step, self.gamma)
+        self.memory = ReplayMemory(
+            memory_size,
+            batch_size,
+            frames,
+            state.shape[0],
+            state.shape[1],
+            n_step,
+            self.gamma,
+        )
 
     def update_critic_(self, critic, optim, state, action, reward, next_state, mask):
         Q_values = critic(state, action)
@@ -273,7 +310,7 @@ class Agent():
             v = mask * (q - self.temp * a_log_prob)
             Q_target = reward + self.gamma * v
 
-        loss = torch.mean(0.5 * (Q_values - Q_target).pow(2)) # Equation 5 from SAC
+        loss = torch.mean(0.5 * (Q_values - Q_target).pow(2))  # Equation 5 from SAC
 
         optim.zero_grad()
         loss.backward()
@@ -285,14 +322,18 @@ class Agent():
         state = samples["states"]
         action = samples["actions"]
         next_state = samples["new_states"].to(device)
-        reward = samples["rewards"].view(-1,1)
+        reward = samples["rewards"].view(-1, 1)
         done = samples["dones"].view(-1, 1)
 
         mask = 1 - done
 
-        self.update_critic_(self.critic1, self.optim2, state, action, reward, next_state, mask)
-        self.update_critic_(self.critic2, self.optim3, state, action, reward, next_state, mask)
-        
+        self.update_critic_(
+            self.critic1, self.optim2, state, action, reward, next_state, mask
+        )
+        self.update_critic_(
+            self.critic2, self.optim3, state, action, reward, next_state, mask
+        )
+
         a, std = self.actor(state)
         probs = dist.Normal(a, std)
         u = probs.rsample()
@@ -304,13 +345,17 @@ class Agent():
         q_2 = self.critic2(next_state, actions)
         q = torch.min(q_1, q_2)
 
-        loss = (self.temp.detach() * a_log_prob - q).mean() # Update with equation 9 from SAC paper
+        loss = (
+            self.temp.detach() * a_log_prob - q
+        ).mean()  # Update with equation 9 from SAC paper
 
         self.optim1.zero_grad()
         loss.backward()
         self.optim1.step()
 
-        alpha_loss = (-self.temp * a_log_prob.detach() - self.temp * self.entropy_target).mean() # Update alpha / tempature parameter with equation 18 from SAC paper
+        alpha_loss = (
+            -self.temp * a_log_prob.detach() - self.temp * self.entropy_target
+        ).mean()  # Update alpha / tempature parameter with equation 18 from SAC paper
 
         self.optim4.zero_grad()
         alpha_loss.backward()
@@ -322,7 +367,7 @@ class Agent():
             target_param.data.copy_(
                 target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
             )
-        
+
         for eval_param, target_param in zip(
             self.critic2.parameters(), self.critic2_target.parameters()
         ):
@@ -331,7 +376,6 @@ class Agent():
             )
 
         return loss
-
 
     def stack_frames(self, stacked_frames, state, is_new_episode, max_frames):
         if is_new_episode:
@@ -351,7 +395,6 @@ class Agent():
             stacked_state = np.stack(stacked_frames, axis=0)
 
         return torch.FloatTensor(stacked_state), stacked_frames
-    
 
     def train(self, episodes, render):
         reward_sum = []
@@ -360,7 +403,7 @@ class Agent():
             truncated = False
 
             state = cv2.resize(
-            rgb2gray(crop(self.env.reset(), ((13, 13), (15, 25), (0, 0)))), (84, 84)
+                rgb2gray(crop(self.env.reset(), ((13, 13), (15, 25), (0, 0)))), (84, 84)
             )
             episode_reward = 0
 
@@ -386,21 +429,26 @@ class Agent():
             self.lives = self.env.ale.lives()
             j = 0
             while not done or not truncated:
-                
+
                 if j % 3 == 0:
-                    if (np.random.uniform(0, 1) >= self.epsilon) and len(self.memory) > (self.memory.capacity):
+                    if (np.random.uniform(0, 1) >= self.epsilon) and len(
+                        self.memory
+                    ) > (self.memory.capacity):
                         with torch.no_grad():
-                            a, std = self.actor(torch.FloatTensor(state.unsqueeze(0)).to(device))
+                            a, std = self.actor(
+                                torch.FloatTensor(state.unsqueeze(0)).to(device)
+                            )
                             probs = dist.Normal(a, std)
                             action = probs.rsample()
                     else:
                         action = torch.normal(0, 1, size=(1, self.env.action_space.n))
 
-
-                if render and len(self.memory) >= self.memory.capacity -1:
+                if render and len(self.memory) >= self.memory.capacity - 1:
                     self.env.render()
 
-                next_state, reward, done, truncated = self.env.step(action.argmax().detach().cpu().resolve_conj().resolve_neg().numpy())
+                next_state, reward, done, truncated = self.env.step(
+                    action.argmax().detach().cpu().resolve_conj().resolve_neg().numpy()
+                )
 
                 next_state, stacked_frames = self.stack_frames(
                     stacked_frames,
@@ -418,7 +466,7 @@ class Agent():
                 dones.append(done)
                 true_reward = reward
 
-                reward = min(1, reward) 
+                reward = min(1, reward)
 
                 rewards.append(true_reward)
 
@@ -426,7 +474,9 @@ class Agent():
 
                 if len(self.memory) > (self.memory.capacity) and j % 3 == 0:
                     loss = self.update().item()
-                    self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
+                    self.epsilon = max(
+                        self.epsilon * self.epsilon_decay, self.epsilon_min
+                    )
                 else:
                     loss = 1
                 losses.append(loss)
@@ -449,4 +499,3 @@ class Agent():
                 dones,
                 next_actions,
             )
-

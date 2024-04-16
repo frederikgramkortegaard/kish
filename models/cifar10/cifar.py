@@ -18,7 +18,7 @@ class f(nn.Module):
         super(f, self).__init__()
 
     def forward(self, x):
-        return nn.functional.relu(x)  # Generalized Gaussian Error unit
+        return nn.functional.relu(x) 
 
 
 __all__ = ["resnet"]
@@ -131,7 +131,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 64, n, stride=2)
         self.avgpool = nn.AvgPool2d(8)
         self.fc = nn.Linear(64 * block.expansion, num_classes)
-        self.dropout = nn.Dropout(0.5)
+
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -169,11 +169,8 @@ class ResNet(nn.Module):
         x = self.relu(x)  # 32x32
 
         x = self.layer1(x)  # 32x32
-        x = self.dropout(x)
         x = self.layer2(x)  # 16x16
-        x = self.dropout(x)
         x = self.layer3(x)  # 8x8
-        x = self.dropout(x)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
@@ -187,7 +184,6 @@ class ResNet(nn.Module):
 #     transforms.RandomCrop(32, padding=4),
 #     transforms.RandomHorizontalFlip(),
 #     transforms.ToTensor(),
-#     transforms.RandomErasing(),
 #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 # ])
 # transformtest = transforms.Compose([

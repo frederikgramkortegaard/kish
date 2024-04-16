@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import gym
 from skimage.color import rgb2gray
 from collections import deque
 import cv2
 import math
 from skimage.util import crop
-import torchvision.transforms as transforms
 import sys
+import torch.distributions as dist
 import os
 
 sys.path.append(
@@ -16,18 +15,22 @@ sys.path.append(
 )
 
 from models.Atari.Optimizer import OrthAdam
+from models.Atari.Attentionsplit import AttentionSplit
+from models.Atari.VBlinear import VBLinear
 
 device = torch.device("cuda")
-
 
 # Class for storing transition memories
 # also includes functions for batching
 class ReplayMemory:
-    def __init__(self, capacity, batch_size, frames, height, width, n_step, gamma):
+    def __init__(self, capacity, batch_size, frames, height, width, n_step, gamma, hidden_dim, n_outputs):
         self.capacity = capacity
         self.mem_counter = 0
         self.mem_size = 0
         self.gamma = gamma
+        self.hidden_dim = hidden_dim
+        self.frames = frames
+        self.n_hidden = hidden_dim
 
         self.state_memory = torch.zeros(
             (self.capacity, frames, height, width), dtype=torch.float32
@@ -35,16 +38,20 @@ class ReplayMemory:
         self.new_state_memory = torch.zeros(
             (self.capacity, frames, height, width), dtype=torch.float32
         )
-        self.action_memory = torch.zeros(self.capacity, dtype=torch.int32)
+        self.action_memory = torch.zeros(self.capacity, n_outputs, dtype=torch.float32)
         self.reward_memory = torch.zeros(self.capacity, dtype=torch.float32)
         self.done_memory = torch.zeros(self.capacity, dtype=torch.int32)
+        self.hidden_memmory = torch.zeros(self.capacity, frames, self.n_hidden, dtype=torch.float32).to(device)
         self.batch_size = batch_size
         self.n_mem = deque(maxlen=n_step)
         self.index = 0
         self.size = 0
 
     # Stores a transition
-    def store_transition(self, state, new_state, action, reward, done):
+    def store_transition(self, state, new_state, action, reward, done, hidden):
+
+        hidden = hidden.view(self.frames, self.n_hidden)
+        reward = torch.tensor(reward).to(device).clamp(0, 1)
         self.n_mem.append(reward)
         if len(self.n_mem) < self.n_mem.maxlen:
             return
@@ -57,11 +64,7 @@ class ReplayMemory:
 
         state = state.to(device)
         new_state = new_state.to(device)
-        if isinstance(action, torch.Tensor):
-            action = action.to(device)
-        else:
-            action = torch.tensor(action).to(device)
-        reward = torch.tensor(reward).to(device)
+
         done = torch.tensor(done).to(device)
 
         self.state_memory[self.index] = state
@@ -69,9 +72,13 @@ class ReplayMemory:
         self.action_memory[self.index] = action
         self.reward_memory[self.index] = reward
         self.done_memory[self.index] = done
+        self.hidden_memmory[self.index] = hidden
 
-        self.index = (self.index + 1) % self.capacity
-        self.size += 1
+        if self.size < self.capacity -1:
+            self.size +=1
+            self.index += 1
+        else:
+            self.index = (self.index + 1) % self.capacity
 
     # returns a sample using indexes
     def sample_batch(self):
@@ -84,161 +91,224 @@ class ReplayMemory:
             actions=self.action_memory[indices],
             rewards=self.reward_memory[indices],
             dones=self.done_memory[indices],
-            indices=indices,
+            indices=indices, 
+            hiddens=self.hidden_memmory[indices]
         )
 
     def __len__(self):
         return self.size
 
-
-class f(nn.Module):
-    def __init__(self):
-        super(f, self).__init__()
-
-    def forward(self, x):
-        return (
-            torch.sinh(nn.functional.sigmoid(x)) * x
-        )  # Generalized Gaussian Error unit
-
-
-class Network(nn.Module):
-    def __init__(self, inputs, actions, frames):
-        super(Network, self).__init__()
-        self.input = inputs
+class Actor(nn.Module):
+    def __init__(self, actions):
+        super(Actor, self).__init__()
         self.actions = actions
 
-        self.conv1 = nn.Conv2d(in_channels=frames, out_channels=32, kernel_size=11, padding=5)
-        n = self.conv1.kernel_size[0] * self.conv1.kernel_size[1] * self.conv1.out_channels
-        nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn1 = nn.BatchNorm2d(32)
-
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=7, padding=3)
-        n = self.conv2.kernel_size[0] * self.conv2.kernel_size[1] * self.conv2.out_channels
-        nn.init.normal_(self.conv2.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn2 = nn.BatchNorm2d(64)
-
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
-        n = self.conv3.kernel_size[0] * self.conv3.kernel_size[1] * self.conv3.out_channels
-        nn.init.normal_(self.conv3.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn3 = nn.BatchNorm2d(128)
-
-        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
-        n = self.conv4.kernel_size[0] * self.conv4.kernel_size[1] * self.conv4.out_channels
-        nn.init.normal_(self.conv1.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
-        self.bn4 = nn.BatchNorm2d(256)
-
-        self.maxpool = nn.MaxPool2d(3)
-        self.avgpool = nn.AvgPool2d(3)
-
-        self.dropout = nn.Dropout(0.5)
-        self.action = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
-            f(),
-            nn.Dropout(0.5),
-            nn.Linear(256, self.actions),
+        self.logstd = nn.Parameter(torch.zeros(1, actions))
+        self.logstd.data.normal_(-9, 0.001)
+        self.vision = nn.Sequential(
+            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=11, padding=5),
+            nn.BatchNorm2d(16),
+            nn.GELU(),
+            nn.MaxPool2d(3),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.GroupNorm(8, 32),
+            nn.GELU(),
+            nn.MaxPool2d(3),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.GroupNorm(16, 64),
+            nn.GELU(),
+            nn.MaxPool2d(3),
         )
-        for module in self.action:
-            if isinstance(module, nn.LayerNorm):
-                nn.init.normal_(module.weight)
-            if isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight)
 
-        self.f = f()
+        for module in self.vision:
+            if isinstance(module, nn.Conv2d):
+                n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+
+        # Forward sequence 
+        self.encoder = AttentionSplit(576, 576, 8)
+
+        self.action = VBLinear(576, self.actions)
 
         self.to(device)
 
-    def forward(self, states):
+    def forward(self, states, hidden=None):
+        states = states.view(states.shape[0], states.shape[1], 1, states.shape[2], states.shape[3])
+        # Assuming states has shape (batch_size, num_frames, num_channels, height, width)
+        batch_size, num_frames, _, _, _ = states.shape
 
-        x = self.dropout(self.maxpool(self.f(self.bn1(self.conv1(states)))))
-        x = self.dropout(self.maxpool(self.f(self.bn2(self.conv2(x)))))
-        x = self.dropout(self.maxpool(self.f(self.bn3(self.conv3(x)))))
-        x = self.dropout(self.avgpool(self.f(self.bn4(self.conv4(x))))).flatten(1)
+        # Reshape states to combine batch_size and num_frames dimensions
+        states = states.view(-1, states.shape[2], states.shape[3], states.shape[4])
 
-        return self.action(x)
+        x = self.vision(states)
+
+        # Reshape back to (batch_size, num_frames, -1)
+        x = x.view(batch_size, num_frames, -1)
+        
+        x, c = self.encoder(x, hidden)
+
+        return self.action(x[:, -1, :]), self.logstd.clamp(-11, 11).exp(), c
+    
+class Critic(nn.Module):
+    def __init__(self, n_actions, hidden_dim, frames):
+        super(Critic, self).__init__()
+
+        self.actions = n_actions
+        self.hidden_dim = hidden_dim
+
+        self.vision = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=11, padding=5),
+            nn.BatchNorm2d(16),
+            nn.GELU(),
+            nn.MaxPool2d(3),
+            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8),
+            nn.GroupNorm(8, 32),
+            nn.GELU(),
+            nn.MaxPool2d(3),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16),
+            nn.GroupNorm(16, 64),
+            nn.GELU(),
+            nn.MaxPool2d(3),
+        )
+
+        for module in self.vision:
+            if isinstance(module, nn.Conv2d):
+                n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
+                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n)) # Microsoft Init
+
+        self.fc1 = nn.Linear(576 + n_actions, self.hidden_dim)
+        n1 = self.fc1.weight.shape[1] * self.fc1.weight.shape[0]
+        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2/n1))
+
+        self.layernorm1 = nn.LayerNorm(self.hidden_dim)
+
+        self.fc2 = nn.Linear(self.hidden_dim, 1)
+        n2 = self.fc2.weight.shape[1] * self.fc2.weight.shape[0]
+        nn.init.normal_(self.fc2.weight, 0, math.sqrt(2/n2))
+
+        self.f = nn.GELU()
+
+    def forward(self, state, actions):
+        x = self.vision(state[:, -3:, :, :]).flatten(1)
+        x = torch.cat((x, actions), dim=1)
+        x = self.f(self.layernorm1(self.fc1(x)))
+        return self.fc2(x)
 
 
 class Agent:
-    def __init__(self, frames, n_step, batch_size, mem_size, gamma):
-        self.game = gym.make("SpaceInvaders-v0")
-        state = cv2.resize(
-            rgb2gray(crop(self.game.reset(), ((13, 13), (15, 25), (0, 0)))), (84, 84)
-        )
-        self.steps = 0
-        self.frames = frames
-        self.game.seed(0)
-        self.eval = Network(state.flatten().shape[0], self.game.action_space.n).to(
-            device
-        )
-        self.eval_target = Network(
-            state.flatten().shape[0], self.game.action_space.n, self.frames
-        ).to(device)
-        self.eval_target.load_state_dict(self.eval.state_dict())
+    def __init__(self, frames, n_step, batch_size, mem_size, gamma, lr, weight_decay, n_outputs, hidden_dim, env, height, width):
 
-        self.memory = ReplayMemory(
-            mem_size, batch_size, self.frames, state.shape[0], state.shape[1], n_step, gamma
-        )
-        self.optimizer = OrthAdam(self.eval.parameters(), lr=0.00003, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer, 100, 2
-        )
-        self.transform = transforms.Compose(
-            [
-                transforms.GaussianBlur([11, 11], (0.1, 3)),
-                transforms.RandomErasing(),
-                transforms.RandomRotation(degrees=[-180, 180]),
-                transforms.Normalize(
-                    (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-                ),
-            ]
-        )
-
+        self.env = env
+        self.lr = lr
         self.gamma = gamma
-        self.TAU = 0.0005
-        self.epsilon = 0.99
+        self.batch_size = batch_size
+        self.frames = frames
+        self.hidden_dim = hidden_dim
+        self.tau = 0.005
+        self.temp = nn.Parameter(torch.tensor(0.2))
+        self.temp.to(device)
+        self.entropy_target = - torch.tensor(n_outputs)
+
+        self.actor = Actor(n_outputs).to(device)
+        self.optim1 = torch.optim.AdamW(self.actor.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
+
+        self.critic1 = Critic(n_outputs, self.hidden_dim, frames).to(device)
+        self.critic2 = Critic(n_outputs, self.hidden_dim, frames).to(device)
+
+        self.critic1_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
+        self.critic2_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
+        
+        self.critic1_target.load_state_dict(self.critic1.state_dict())
+        self.critic2_target.load_state_dict(self.critic2.state_dict())
+
+        self.optim2 = torch.optim.AdamW(self.critic1.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
+        self.optim3 = torch.optim.AdamW(self.critic2.parameters(), lr, weight_decay=weight_decay, fused=True, amsgrad=True)
+        self.optim4 = torch.optim.AdamW([self.temp], lr, weight_decay=weight_decay, amsgrad=True)
+        self.memory = ReplayMemory(capacity=mem_size, batch_size=batch_size, frames=frames, n_step=n_step, hidden_dim=self.hidden_dim, gamma=self.gamma, height=height, width=width, n_outputs=n_outputs)
+
+    def update_critic_(self, critic, optim, state, action, reward, next_state, mask, a_log_prob, actions):
+
+        Q_values = critic(state, action)
+
+        with torch.no_grad():
+
+            q_1 = self.critic1_target(next_state, actions)
+            q_2 = self.critic2_target(next_state, actions)
+
+            q = torch.min(q_1, q_2)
+
+            v = mask * (q - self.temp * a_log_prob)
+            Q_target = reward + self.gamma * v
+
+        loss = torch.mean((Q_values - Q_target).pow(2)) # Equation 5 from SAC
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
 
     def update(self):
-        self.eval.train()
-        self.eval_target.train()
 
         samples = self.memory.sample_batch()
-
-        state = self.transform(samples["states"].squeeze(1))
-        new_state = self.transform(samples["new_states"].squeeze(1)).to(device)
-        action = samples["actions"].view(-1, 1).to(device)
-        reward = samples["rewards"].view(-1, 1).to(device)
+        state = samples["states"].to(device)
+        action = samples["actions"].to(device)
+        next_state = samples["new_states"].to(device)
+        reward = samples["rewards"].view(-1,1).to(device)
         done = samples["dones"].view(-1, 1).to(device)
+        hiddens = samples["hiddens"].to(device)
 
         mask = 1 - done
 
-        Q_value = self.eval(state).gather(1, action.long())
+        with torch.no_grad():
+            _, _, hiddens_ = self.actor(state, hiddens)
 
-        Q_next = torch.mean(self.eval_target(new_state), dim=-1).view(-1, 1).detach()
+        a_, std_, _ = self.actor(next_state, hiddens_)
+        probs_ = dist.Normal(a_, std_)
+        u_ = probs_.rsample()
+        a_log_prob_ = probs_.log_prob(u_)
+        actions_ = torch.tanh(u_)
+        a_log_prob_ -= torch.log(1 - actions_**2 + 1e-8)
 
-        Q_target = (reward + (self.gamma * Q_next * mask)).detach()
+        self.update_critic_(self.critic1, self.optim2, state, action, reward, next_state, mask, a_log_prob_.detach(), actions_.detach())
+        self.update_critic_(self.critic2, self.optim3, state, action, reward, next_state, mask, a_log_prob_.detach(), actions_.detach())
 
-        loss = ((Q_value - Q_target) ** 2).mean()
+        q_1 = self.critic1(next_state, actions_)
+        q_2 = self.critic2(next_state, actions_)
+        q = torch.min(q_1, q_2)
 
-        self.optimizer.zero_grad()
+        loss = (self.temp.detach() * a_log_prob_ - q).mean()  # Update with equation 9 from SAC paper
+
+        self.optim1.zero_grad()
         loss.backward()
-        self.optimizer.step()
+        self.optim1.step()
+
+        alpha_loss = (-self.temp * (a_log_prob_ + self.entropy_target).detach()).mean() # Update alpha / tempature parameter with equation 18 from SAC paper
+
+        self.optim4.zero_grad()
+        alpha_loss.backward()
+        self.optim4.step()
 
         for eval_param, target_param in zip(
-            self.eval.parameters(), self.eval_target.parameters()
+            self.critic1.parameters(), self.critic1_target.parameters()
         ):
             target_param.data.copy_(
-                target_param.data * (1.0 - self.TAU) + eval_param.data * self.TAU
+                target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
+            )
+        
+        for eval_param, target_param in zip(
+            self.critic2.parameters(), self.critic2_target.parameters()
+        ):
+            target_param.data.copy_(
+                target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
             )
 
-        self.steps += 1
-
         return loss
+
 
     def stack_frames(self, stacked_frames, state, is_new_episode, max_frames):
         if is_new_episode:
             stacked_frames = deque(
                 [
-                    np.zeros((1, state.shape[0], state.shape[1]), dtype=np.float64)
+                    np.zeros((state.shape[0]), dtype=np.float64)
                     for _ in range(self.frames)
                 ],
                 maxlen=max_frames,
@@ -252,19 +322,23 @@ class Agent:
             stacked_state = np.stack(stacked_frames, axis=0)
 
         return torch.FloatTensor(stacked_state), stacked_frames
+    
+    def train(self, timesteps, render):
+        t = 0
+        rewards = []
+        losses = []
+        while t <= timesteps:
 
-    def train(self, episodes, render):
-
-        for _ in range(episodes):
-
+            done = False
+            truncated = False
+            state, _ = self.env.reset()
             state = cv2.resize(
-                rgb2gray(crop(self.game.reset(), ((13, 13), (15, 25), (0, 0)))),
-                (84, 84),
+                rgb2gray(crop(state, ((13, 13), (15, 25), (0, 0)))), (84, 84)
             )
 
             stacked_frames = deque(
                 [
-                    np.zeros((1, state.shape[0], state.shape[1]), dtype=np.float64)
+                    np.zeros((state.shape[0]), dtype=np.float64)
                     for _ in range(self.frames)
                 ],
                 maxlen=self.frames,
@@ -273,72 +347,57 @@ class Agent:
                 stacked_frames, state, True, self.frames
             )
 
-            done = False
-            truncated = False
-
-            self.lives = self.game.ale.lives()
             j = 0
-            rewards = []
-            losses = []
-            while not done or not truncated:
-                current_loss = 0
-                if len(self.memory) > (self.memory.capacity) and render == True:
-                    self.game.render()
+            hiddens = torch.zeros((self.frames, self.hidden_dim)).to(device)
+            prev_hiddens = hiddens.clone()
+            while not done and not truncated:
+                
+                if j % 3 == 0:
+                    with torch.no_grad():
+                        self.actor.eval()
+                        a, std, hiddens = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0), hiddens)
+                        probs = dist.Normal(a, std)
+                        u = probs.rsample()
+                        action = torch.tanh(u)
+                        self.actor.train()
+                    
+                if render and len(self.memory) > 1000:
+                    self.env.render()
 
-                if j % self.frames == 0:
-                    if (np.random.uniform(0, 1) >= self.epsilon) and len(
-                        self.memory
-                    ) > (self.memory.capacity):
-                        with torch.no_grad():
-                            self.eval.eval()
-                            action_choice = self.eval(
-                                torch.FloatTensor(state).unsqueeze_(0).to(device)
-                            )
-                            action = torch.argmax(action_choice).item()
-                    else:
-                        action_choice = np.random.normal(size=self.game.action_space.n)
-                        action = np.argmax(action_choice)
-
-                next_state, reward, done, truncated = self.game.step(action)
-                true_reward = reward
-
-                reward = min(1, reward)
-
-                rewards.append(true_reward)
-
-                if self.lives > self.game.ale.lives():
-                    reward -= 1
-                    self.lives = self.game.ale.lives()
+                next_state, reward, done, truncated, _ = self.env.step(action.argmax(dim=-1).item())
 
                 next_state, stacked_frames = self.stack_frames(
                     stacked_frames,
                     cv2.resize(
-                        rgb2gray(crop(next_state, ((13, 13), (15, 25), (0, 0)))),
-                        (84, 84),
+                        rgb2gray(crop(next_state, ((13, 13), (15, 25), (0, 0)))), (84, 84)
                     ),
                     False,
                     self.frames,
                 )
 
-                self.memory.store_transition(state, next_state, action, reward, done)
+                rewards.append(reward)
+                self.memory.store_transition(state=state, action=action, reward=reward, new_state=next_state, done=done, hidden=prev_hiddens)
+                prev_hiddens = hiddens
 
-                if len(self.memory) > (self.memory.capacity) and j % self.frames == 0:
-                    current_loss = self.update().item()
-                    self.epsilon = max(self.epsilon * 0.999995, 0.01)
-
-                losses.append(current_loss)
+                if len(self.memory) > 1000 and j % 3 == 0:
+                    loss = self.update().item()
+                else:
+                    loss = 1
+                losses.append(loss)
                 state = next_state
 
+                if (t % 100) == 0:
+                    print("timestep: ", t)
+                    print("Reward: ", sum(rewards))
+                    print("Loss: ", sum(losses))
+                    print("Average reward: ", sum(rewards) / len(rewards))
+                    print("Average loss: ", sum(losses) / len(losses))
+                    print()
+                if (t % 1000) == 0:
+                    yield (rewards, losses)
+                    rewards = []
+                    losses = []
+                
                 j += 1
+                t += 1
 
-            self.scheduler.step()
-
-            yield (
-                None,
-                None,
-                rewards,
-                losses,
-                None,
-                None,
-                None,
-            )

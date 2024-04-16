@@ -6,8 +6,10 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from models.sarsa.sarsa import Agent as DeepSARSA
+
 from src.classes import Reinforcement
+from models.sarsa.sarsa import Agent as DeepSARSA
+from models.sarsa.Attention import agent as Agent2
 from src.graphing import (
     live_report_reinforcement_agent,
     save_reinforcement_agent_rewards_graph,
@@ -16,12 +18,13 @@ from src.runners import train_reinforcement_agent, iterative_train_reinforcement
 from src.utils import save_reinforcement_agent_output
 
 if __name__ == "__main__":
-
+    
+    envi = gym.make("CartPole-v1")
     agent = DeepSARSA(
-        env=gym.make("CartPole-v1"),
-        n_inputs=4,
+        env=envi,
+        n_inputs=envi.observation_space.shape[0],
         n_outputs=2,
-        lr=0.01,
+        lr=0.003,
         gamma=0.9,
         epsilon=1.0,
         epsilon_decay=0.9995,
@@ -30,8 +33,17 @@ if __name__ == "__main__":
         memory_size=10000,
     )
 
-    live_report_reinforcement_agent(
-        iterative_train_reinforcement_agent(
-            agent, Reinforcement.TrainingInput(num_episodes=100, render=False)
-        )
-    )
+    for i in agent.train(40, True):
+        l = i
+    
+    k = []
+    for i in agent.test(60, False):
+        k.append(i)
+
+    p = []
+    for i in agent.test(7, False):
+        p.append(i)
+
+    agent2 = Agent2(k)
+    agent2.train()
+    agent2.test(p)

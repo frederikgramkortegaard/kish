@@ -138,40 +138,30 @@ def train_reinforcement_agent(
 def iterative_train_reinforcement_agent(
     agent: object,
     input: Reinforcement.TrainingInput,
-) -> Generator[Reinforcement.Episode, None, Reinforcement.TrainingOutput]:
+) -> Generator[Reinforcement.timesteps, None, Reinforcement.TrainingOutput]:
     """Train a reinforcement agent on a gym environment, this
     function is a generator that yields episodes as they are completed.
     """
 
     logger.info("Iteratively training reinforcement network...")
 
-    output = Reinforcement.TrainingOutput(agent=agent, episodes=[])
+    output = Reinforcement.TrainingOutput(agent=agent, timesteps=[])
     try:
         # Agents are required to yield these values every episode, values are allowed to be empty in case we don't care about losses or any other field.
-        for episode, (
-            states,
-            actions,
+        for timesteps, (
             rewards,
             losses,
-            next_states,
-            dones,
-            next_action,
-        ) in enumerate(agent.train(episodes=input.num_episodes, render=input.render)):
-            logger.info(f"Episode {episode}...")
+        ) in enumerate(agent.train(timesteps=input.num_timesteps, render=input.render)):
+            logger.info(f"1000 timesteps {timesteps}...")
 
-            output.episodes.append(
-                Reinforcement.Episode(
-                    states=np.array(states),
-                    actions=np.array(actions),
+            output.timesteps.append(
+                Reinforcement.timesteps(
                     rewards=np.array(rewards),
                     losses=losses,
-                    next_states=np.array(next_states),
-                    dones=np.array(dones),
-                    next_actions=np.array(next_action),
                 )
             )
 
-            yield output.episodes[-1]
+            yield output.timesteps[-1]
 
     except KeyboardInterrupt:
         logger.debug("Training interrupted by user")
@@ -196,6 +186,6 @@ def run_reinforcement_agent(
 def iterative_run_reinforcement_agent(
     agent: object,
     input: Reinforcement.RuntimeInput,
-) -> Generator[Reinforcement.Episode, None, Reinforcement.RuntimeOutput]:
+) -> Generator[Reinforcement.timesteps, None, Reinforcement.RuntimeOutput]:
     logger.info("Iteratively running reinforcement network...")
     raise NotImplementedError

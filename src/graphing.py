@@ -119,7 +119,7 @@ def report_reinforcement_agent(
 
 
 def live_report_reinforcement_agent(
-    generator: Generator[Reinforcement.Episode, None, Reinforcement.TrainingOutput],
+    generator: Generator[Reinforcement.timesteps, None, Reinforcement.TrainingOutput],
     moving_average_window: bool = 30,
 ):
     """Create and live-update a graph using the ReinforcementTrainingOutput data"""
@@ -133,7 +133,7 @@ def live_report_reinforcement_agent(
         for enum, output in enumerate(generator):
             plt.clf()
             plt.suptitle(
-                f"Reinforcement Network Training - Live Update\nCurrent Episode {enum} (0 indexed)"
+                f"Reinforcement Network Training - Live Update\nCurrent 1000 timesteps {enum} (0 indexed)"
             )
             episode_sums.append(sum(output.rewards))
 
@@ -141,8 +141,8 @@ def live_report_reinforcement_agent(
 
             ## Setup
             plt.xlim(0, enum + 10)
-            plt.ylim(0, max(episode_sums) + 10)
-            plt.xlabel("Episode")
+            plt.ylim(min(episode_sums) -10, max(episode_sums) + 10)
+            plt.xlabel("1000 timesteps")
             plt.ylabel("Reward")
 
             # Moving Average
@@ -158,7 +158,7 @@ def live_report_reinforcement_agent(
 
                 ## We put this here because if we placed it before the loop we wouldn't get the "Moving Average" label
                 plt.legend(
-                    ["Reward", f"Moving Average ({moving_average_window} episodes)"]
+                    ["Reward", f"Moving Average ({moving_average_window} 1000 timesteps)"]
                 )
 
             plt.draw()

@@ -9,8 +9,17 @@
 ## PyTorch
 
 .coverage
+Anaconda3-2023.03-Linux-x86_64.sh
 coverage.xml
 .dmypy.json
+*.gz
+*.zip
+*.rar 
+*.tar
+venv1
+*.png
+*.jpeg
+*.jpg
 .gradle
 .hypothesis
 .mypy_cache

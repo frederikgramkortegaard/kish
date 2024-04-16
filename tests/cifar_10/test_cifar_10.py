@@ -9,6 +9,7 @@ sys.path.append(
 from src.runners import train_network, test_network
 from src.classes import Network
 from models.cifar10.cifar import ResNet
+from models.Atari.Optimizer import SGDNorm
 from src.graphing import report_network_loss, save_network_loss_graph
 from src.utils import save_network_output, save_network_test_results
 import torch
@@ -25,7 +26,6 @@ if __name__ == "__main__":
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.RandomErasing(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ]
     )
@@ -50,12 +50,12 @@ if __name__ == "__main__":
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=128, shuffle=False, num_workers=2
     )
-    resnet = ResNet(56, 10)
+    resnet = ResNet(20, 10)
 
     # Define the loss function and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(resnet.parameters(), lr=0.003, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [200, 350], 0.1)
+    optimizer = SGDNorm(resnet.parameters(), lr=0.1, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [81, 122], 0.1)
 
     input = Network.TrainingInput(
         trainloader=trainloader,

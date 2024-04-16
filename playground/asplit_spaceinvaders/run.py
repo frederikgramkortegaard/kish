@@ -1,4 +1,8 @@
-""" Run the Atari Space Invaders game with an AttentionSplit based reinforcement learning agent. see model.py for the agent model. """
+""" 
+
+
+
+Run the Atari Space Invaders game with an AttentionSplit based reinforcement learning agent. see model.py for the agent model. """
 
 import sys
 import os

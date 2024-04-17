@@ -27,7 +27,7 @@ if __name__ == "__main__":
         epsilon_decay=0.9995,
         epsilon_min=0.01,
         batch_size=32,
-        memory_size=10000,
+        memory_size=1000,
     )
 
     for i in agent.train(40, True):

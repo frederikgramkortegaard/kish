@@ -11,10 +11,30 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Optimizer import SGDNorm
+from modules.Optimizer import OrthAdam
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Initializes weights with orthonormal weights row-wise
+def Orthonorm_weight(weight):
+    ones = (
+        torch.ones_like(weight).data.normal_(0, math.sqrt(2 / (weight.numel()))).t()
+    )  # We choose Microsoft init as our choice of basis for the vector-space
+
+    for i in range(1, int(ones.shape[0])):
+        projection_neg_sum = torch.zeros_like(ones[i, :])
+        for j in range(i):
+            projection_neg_sum.data.add_(
+                (
+                    ((ones[i, :].t() @ ones[j, :]) / (ones[j, :].t() @ ones[j, :]))
+                    * ones[j, :]
+                )
+            )
+        ones[i, :].data.sub_(projection_neg_sum)
+
+    ones /= torch.sqrt((ones**2).sum(-1, keepdim=True)) # We take out the norm from the coloumns, which will represent as the rows during forward passes
+
+    return ones.t()  # Return Orthonormal basis
 
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
@@ -87,18 +107,6 @@ class ReplayMemory:
     def __len__(self):
         return self.size
 
-
-class func(nn.Module):
-    def __init__(self):
-        super(func, self).__init__()
-
-    def forward(self, input):
-
-        return torch.where(
-            input <= 1, torch.exp(input) - 1, torch.log(input) + 1 + (1 / math.sqrt(2))
-        )
-
-
 class Network(nn.Module):
     def __init__(self, inputs, actions):
         super(Network, self).__init__()
@@ -106,19 +114,17 @@ class Network(nn.Module):
         self.action = actions
 
         self.fc1 = nn.Linear(self.input, 256)
-        nn.init.normal_(self.fc1.weight, 0, 1 / self.fc1.weight.numel())
-        nn.utils.parametrizations.weight_norm(self.fc1)
+        Orthonorm_weight(self.fc1.weight)
 
         self.action = nn.Linear(256, self.action)
-        nn.init.normal_(self.action.weight, 0, 1 / self.action.weight.numel())
-        nn.utils.parametrizations.weight_norm(self.action)
+        Orthonorm_weight(self.action.weight)
 
         self.layer_norm1 = nn.LayerNorm(256)
 
-        self.SELU = func()
+        self.f = nn.GELU()
 
     def forward(self, states):
-        x = self.SELU(self.layer_norm1(self.fc1(states)))
+        x = self.f(self.layer_norm1(self.fc1(states)))
         return self.action(x)
 
 
@@ -148,8 +154,7 @@ class Agent:
         self.memory_size = memory_size
 
         self.model = Network(n_inputs, n_outputs).to(device)
-        self.loss_fn = nn.SmoothL1Loss()
-        self.optimizer = SGDNorm(self.model.parameters(), lr=0.1, weight_decay=1e-4)
+        self.optimizer = OrthAdam(self.model.parameters(), lr=0.003, weight_decay=1e-4)
         self.memory = ReplayMemory(memory_size, 256, n_inputs)
 
     def update(self):
@@ -170,7 +175,7 @@ class Agent:
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
-        loss = (Q_value - Q_target).pow(2).mean()
+        loss = (Q_value - Q_target).pow(2).mean() # MSE loss
 
         self.optimizer.zero_grad()
         loss.backward()

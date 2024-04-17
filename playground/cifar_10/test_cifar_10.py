@@ -19,7 +19,6 @@ from kish.utils import save_network_output, save_network_test_results
 
 # Model Specifications
 from modules.ResNet import ResNet
-from modules.Optimizer import SGDNorm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

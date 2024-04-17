@@ -9,7 +9,7 @@ import math
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
-from modules.Optimizer import RNAdamWP, SGDNorm
+from modules.Optimizer import OrthAdam
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,17 +34,6 @@ def Orthonorm_weight(weight):
     ones /= torch.sqrt((ones**2).sum(-1, keepdim=True))
 
     return ones.t()  # Return Orthonormal basis
-
-
-class func(nn.Module):
-    def __init__(self):
-        super(func, self).__init__()
-
-    def forward(self, input):
-
-        return torch.where(
-            input <= 1, torch.exp(input) - 1, torch.log(input) + 1 + (1 / math.sqrt(2))
-        )
 
 
 # Class for storing transition memories
@@ -136,7 +125,7 @@ class Actor(nn.Module):
         self.logstd = nn.Parameter(torch.zeros(1, n_outputs))
         self.logstd.data.normal_(math.log(math.sqrt(2 / self.logstd.numel())), 0.01)
 
-        self.f = func()
+        self.f = nn.GELU()
 
     def forward(self, state):
         x = self.f(self.ln(self.fc1(state)))
@@ -159,7 +148,7 @@ class Critic(nn.Module):
         self.fc2 = nn.Linear(self.hidden_dim, 1)
         self.fc2.weight.data.normal_(0, math.sqrt(2 / self.hidden_dim))
 
-        self.f = func()
+        self.f = nn.GELU()
 
     def forward(self, state, actions):
         x = torch.cat((state, actions), dim=1)

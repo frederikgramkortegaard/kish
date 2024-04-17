@@ -26,20 +26,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if __name__ == "__main__":
 
     # Define the transformation for the dataset
-    transform = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-    transformtest = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
+    transform = transforms.Compose([])
+    transformtest = transforms.Compose([])
 
     # Load the CIFAR-10 dataset
     trainset = torchvision.datasets.CIFAR10(
@@ -68,16 +56,6 @@ if __name__ == "__main__":
     optimizer = SGDNorm(resnet.parameters(), lr=0.1, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [81, 122], 0.1)
 
-    # Meta
-    if not os.path.exists(f"{os.path.dirname(os.path.abspath(__file__))}/graphs"):
-        os.mkdir(f"{os.path.dirname(os.path.abspath(__file__))}/graphs")
-
-    if not os.path.exists(f"{os.path.dirname(os.path.abspath(__file__))}/outputs"):
-        os.mkdir(f"{os.path.dirname(os.path.abspath(__file__))}/outputs")
-
-    if not os.path.exists(f"{os.path.dirname(os.path.abspath(__file__))}/results"):
-        os.mkdir(f"{os.path.dirname(os.path.abspath(__file__))}/results")
-
     input = Network.TrainingInput(
         trainloader=trainloader,
         epochs=4,
@@ -93,12 +71,12 @@ if __name__ == "__main__":
     )
 
     save_network_loss_graph(
-        path="playground/cifar_10/graphs",
+        path="tests/cifar_10/graphs",
         input=output,
     )
 
     save_network_output(
-        path="playground/cifar_10/outputs",
+        path="tests/cifar_10/outputs",
         input=output,
     )
 
@@ -111,5 +89,5 @@ if __name__ == "__main__":
     )
 
     save_network_test_results(
-        path="playground/cifar_10/results", input=output, custom_name="CustomName"
+        path="tests/cifar_10/results", input=output, name="CustomName"
     )

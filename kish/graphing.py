@@ -23,6 +23,8 @@ def save_network_loss_graph(
 ):
     """Create a graph showing the network's loss over time"""
 
+    
+
     logger.info(f"Saving network loss graph")
 
     fig = plt.figure()

@@ -141,8 +141,6 @@ class agent:
 
         batched_states = torch.stack(batched_states, dim=0)
         batched_next_actions = torch.stack(batched_next_actions, dim=0)
-        # print(batched_states.shape)
-        # input()
 
         for l in range(5000):
 

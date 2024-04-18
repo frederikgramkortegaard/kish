@@ -25,15 +25,15 @@ if __name__ == "__main__":
         env=envi,
         n_inputs=envi.observation_space.shape[0],
         n_outputs=6,
-        lr=0.0003,
+        lr=0.003,
         gamma=0.99,
-        batch_size=256,
+        batch_size=32,
         memory_size=100000,
         frames=6,
         hidden_dim=256,
         n_step=10
     )
-
+    
     live_report_reinforcement_agent(
         iterative_train_reinforcement_agent(
             agent, Reinforcement.TrainingInput(3e6, False)

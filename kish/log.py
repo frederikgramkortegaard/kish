@@ -4,12 +4,10 @@ logging.getLogger("matplotlib.font_manager").disabled = True
 
 
 def setup_custom_logger(name):
-    formatter = logging.Formatter(
-        fmt="%(asctime)s - %(levelname)s - %(module)s - %(message)s"
-    )
 
+    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
     handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
+    handler.setFormatter(FORMAT)
 
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)

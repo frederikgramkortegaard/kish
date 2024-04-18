@@ -179,7 +179,7 @@ class Agent:
         self.entropy_target = -torch.tensor(n_outputs)
 
         self.actor = Actor(n_inputs, n_outputs).to(device)
-        self.optim1 = SGDNorm(self.actor.parameters(), lr)
+        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
 
         self.critic1 = Critic(n_inputs, n_outputs).to(device)
         self.critic2 = Critic(n_inputs, n_outputs).to(device)
@@ -188,9 +188,9 @@ class Agent:
         self.critic2_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.optim2 = SGDNorm(self.critic1.parameters(), lr)
-        self.optim3 = SGDNorm(self.critic2.parameters(), lr)
-        self.optim4 = SGDNorm([self.temp], lr)
+        self.optim2 = OrthAdam(self.critic1.parameters(), lr, amsgrad=True)
+        self.optim3 = OrthAdam(self.critic2.parameters(), lr, amsgrad=True)
+        self.optim4 = OrthAdam([self.temp], lr, amsgrad=True)
         self.memory = ReplayMemory(memory_size, batch_size, n_inputs, n_outputs)
 
     def update_critic_(self, critic, optim, state, action, reward, next_state, mask):

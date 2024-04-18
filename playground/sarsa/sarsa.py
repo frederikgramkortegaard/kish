@@ -188,7 +188,7 @@ class Agent:
             done = False
             truncated = False
 
-            state = self.env.reset()
+            state, _ = self.env.reset()
             if np.random.uniform(0, 1) >= self.epsilon:
                 with torch.no_grad():
                     self.model.eval()
@@ -212,7 +212,7 @@ class Agent:
                 if render and len(self.memory) >= self.memory.capacity - 1:
                     self.env.render()
 
-                next_state, reward, done, truncated = self.env.step(action)
+                next_state, reward, done, truncated, _ = self.env.step(action)
 
                 states.append(state)
                 actions.append(action)
@@ -258,20 +258,18 @@ class Agent:
             )
 
     def test(self, episodes, render):
-        for _ in range(episodes):
+        for e in range(episodes):
             done = False
             truncated = False
 
-            state = self.env.reset()
-            if np.random.uniform(0, 1) >= self.epsilon:
-                with torch.no_grad():
-                    self.model.eval()
-                    action = torch.argmax(
-                        self.model(torch.FloatTensor(state).to(device))
-                    ).item()
-                    self.model.train()
-            else:
-                action = self.env.action_space.sample()
+            state, _ = self.env.reset()
+            with torch.no_grad():
+                self.model.eval()
+                action = torch.argmax(
+                    self.model(torch.FloatTensor(state).to(device))
+                ).item()
+                self.model.train()
+
             episode_reward = 0
 
             states = []
@@ -283,10 +281,10 @@ class Agent:
             next_actions = []
 
             while not done or not truncated:
-                if render:
+                if render and len(self.memory) >= self.memory.capacity - 1:
                     self.env.render()
 
-                next_state, reward, done, truncated = self.env.step(action)
+                next_state, reward, done, truncated, _ = self.env.step(action)
 
                 states.append(state)
                 actions.append(action)
@@ -294,21 +292,26 @@ class Agent:
                 next_states.append(next_state)
                 dones.append(done)
 
-                if np.random.uniform(0, 1) >= self.epsilon:
-                    with torch.no_grad():
-                        self.model.eval()
-                        next_action = torch.argmax(
-                            self.model(torch.FloatTensor(next_state).to(device))
-                        ).item()
-                        self.model.train()
-                else:
-                    next_action = self.env.action_space.sample()
+                with torch.no_grad():
+                    self.model.eval()
+                    next_action = torch.argmax(
+                        self.model(torch.FloatTensor(next_state).to(device))
+                    ).item()
+                    self.model.train()
+
                 next_actions.append(next_action)
+                self.memory.store_transition(
+                    state, action, reward, next_state, next_action, done
+                )
+
+                loss = 1
+                losses.append(loss)
                 state = next_state
                 action = next_action
 
                 episode_reward += reward
 
+            print(e)
             print(episode_reward)
             yield (
                 states,

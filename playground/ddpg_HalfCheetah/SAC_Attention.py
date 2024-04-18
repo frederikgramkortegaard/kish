@@ -12,10 +12,30 @@ sys.path.append(
 )
 
 from modules.Attentionsplit import AttentionSplit
-from modules.Optimizer import RNAdamWP
+from modules.Optimizer import OrthAdam
 
 device = torch.device("cuda")
 
+# Initializes weights with orthonormal weights row-wise
+def Orthonorm_weight(weight):
+    ones = (
+        torch.ones_like(weight).data.normal_(0, math.sqrt(2 / (weight.numel()))).t()
+    )  # We choose Microsoft init as our choice of basis for the vector-space
+
+    for i in range(1, int(ones.shape[0])):
+        projection_neg_sum = torch.zeros_like(ones[i, :])
+        for j in range(i):
+            projection_neg_sum.data.add_(
+                (
+                    ((ones[i, :].t() @ ones[j, :]) / (ones[j, :].t() @ ones[j, :]))
+                    * ones[j, :]
+                )
+            )
+        ones[i, :].data.sub_(projection_neg_sum)
+
+    ones /= torch.sqrt((ones**2).sum(-1, keepdim=True))
+
+    return ones.t()  # Return Orthonormal basis
 
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
@@ -111,8 +131,7 @@ class Actor(nn.Module):
         self.logstd.data.normal_(math.sqrt(2 / self.logstd.numel()), 0.01)
 
         self.fc1 = nn.Linear(self.inputs, 32)
-        n1 = self.fc1.weight.shape[1] * self.fc1.weight.shape[0]
-        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2 / n1))
+        self.fc1.weight.data.copy_(Orthonorm_weight(self.fc1.weight))
 
         self.layernorm1 = nn.LayerNorm(32)
 
@@ -120,8 +139,7 @@ class Actor(nn.Module):
         self.encoder2 = AttentionSplit(self.hidden_dim, self.hidden_dim, 16)
 
         self.fc2 = nn.Linear(self.hidden_dim, self.outputs)
-        n2 = self.fc2.weight.shape[1] * self.fc2.weight.shape[0]
-        nn.init.normal_(self.fc2.weight, 0, math.sqrt(2 / n2))
+        self.fc2.weight.data.copy_(Orthonorm_weight(self.fc2.weight))
 
         self.f = nn.GELU()
 
@@ -130,7 +148,7 @@ class Actor(nn.Module):
         state = state.view(-1, fs)
         x = self.f(self.layernorm1(self.fc1(state)))
         x = x.view(bs, ls, 32)
-
+        
         x, c = self.encoder1(x, hidden)
         x, c = self.encoder2(x, c)
 
@@ -146,10 +164,12 @@ class Critic(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.fc1 = nn.Linear(self.inputs + n_actions, self.hidden_dim)
-        n1 = self.fc1.weight.shape[1] * self.fc1.weight.shape[0]
-        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2 / n1))
+        self.fc1.weight.data.copy_(Orthonorm_weight(self.fc1.weight))
 
         self.layernorm1 = nn.LayerNorm(self.hidden_dim)
+
+        self.encoder1 = AttentionSplit(32, self.hidden_dim, 16)
+        self.encoder2 = AttentionSplit(self.hidden_dim, self.hidden_dim, 16)
 
         self.fc2 = nn.Linear(self.hidden_dim, 1)
         n2 = self.fc2.weight.shape[1] * self.fc2.weight.shape[0]
@@ -158,9 +178,12 @@ class Critic(nn.Module):
         self.f = nn.GELU()
 
     def forward(self, state, actions):
-        x = torch.cat((state[:, -1, :], actions.flatten(1)), dim=1)
-        x = self.f(self.layernorm1(self.fc1(x)))
-        return self.fc2(x)
+        bs, ls, fs = state.shape
+        state = state.view(-1, fs)
+        x = self.f(self.layernorm1(self.fc1(state)))
+        x = x.view(bs, ls, 32)
+
+        return self.fc2(torch.cat([x[:, -1, :], actions]))
 
 
 class Agent:
@@ -191,7 +214,7 @@ class Agent:
         self.entropy_target = -torch.tensor(n_outputs)
 
         self.actor = Actor(n_inputs, n_outputs, self.hidden_dim, self.frames).to(device)
-        self.optim1 = RNAdamWP(self.actor.parameters(), lr)
+        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
 
         self.critic1 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
         self.critic2 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
@@ -202,9 +225,9 @@ class Agent:
         self.critic1_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.optim2 = RNAdamWP(self.critic1.parameters(), lr)
-        self.optim3 = RNAdamWP(self.critic2.parameters(), lr)
-        self.optim4 = RNAdamWP([self.temp], lr)
+        self.optim2 = OrthAdam(self.critic1.parameters(), lr, amsgrad=True)
+        self.optim3 = OrthAdam(self.critic2.parameters(), lr, amsgrad=True)
+        self.optim4 = OrthAdam([self.temp], lr, amsgrad=True)
 
         self.memory = ReplayMemory(
             capacity=memory_size,

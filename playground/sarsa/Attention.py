@@ -135,11 +135,16 @@ class agent:
 
             split_states = states.split(5, 0)
             batched_states.extend(split_states)
+            print(len(batched_states))
 
             split_actions = next_actions.split(5, 0)
             batched_next_actions.extend(split_actions)
 
+        batched_states.pop()
+        batched_states.pop()
         batched_states = torch.stack(batched_states, dim=0)
+        batched_next_actions.pop()
+        batched_next_actions.pop()
         batched_next_actions = torch.stack(batched_next_actions, dim=0)
 
         for l in range(5000):
@@ -204,7 +209,11 @@ class agent:
             split_actions = next_actions.split(5, 0)
             batched_next_actions.extend(split_actions)
 
+        batched_states.pop()
+        batched_states.pop()
         batched_states = torch.stack(batched_states, dim=0)
+        batched_next_actions.pop()
+        batched_next_actions.pop()
         batched_next_actions = torch.stack(batched_next_actions, dim=0)
 
         attention = 0

@@ -1,6 +1,6 @@
 import os
 import sys
-import gym
+import gymnasium as gym
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,21 +22,21 @@ from Attention import agent as Agent2
 
 if __name__ == "__main__":
 
-    envi = gym.make("CartPole-v1")
+    envi = gym.make("Acrobot-v1")
     agent = DeepSARSA(
         env=envi,
         n_inputs=envi.observation_space.shape[0],
-        n_outputs=2,
+        n_outputs=envi.action_space.n,
         lr=0.003,
-        gamma=0.9,
+        gamma=0.95,
         epsilon=1.0,
-        epsilon_decay=0.9995,
+        epsilon_decay=0.99995,
         epsilon_min=0.01,
         batch_size=32,
-        memory_size=1000,
+        memory_size=5000,
     )
 
-    for i in agent.train(40, True):
+    for i in agent.train(40, False):
         l = i
 
     k = []

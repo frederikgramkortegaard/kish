@@ -16,7 +16,7 @@ from kish.runners import train_reinforcement_agent, iterative_train_reinforcemen
 from kish.utils import save_reinforcement_agent_output
 
 # Model Specification
-from SAC import Agent as SAC_agent
+from SAC_Attention import Agent as SAC_agent
 
 if __name__ == "__main__":
 
@@ -25,10 +25,13 @@ if __name__ == "__main__":
         env=envi,
         n_inputs=envi.observation_space.shape[0],
         n_outputs=6,
-        lr=0.01,
+        lr=0.0003,
         gamma=0.99,
         batch_size=256,
         memory_size=100000,
+        frames=6,
+        hidden_dim=256,
+        n_step=10
     )
 
     live_report_reinforcement_agent(

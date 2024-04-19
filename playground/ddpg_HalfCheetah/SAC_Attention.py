@@ -12,7 +12,7 @@ sys.path.append(
 )
 
 from modules.Attentionsplit import AttentionSplit
-from modules.Optimizer import OrthAdam
+from modules.Optimizer import RNAdamWP as OrthAdam
 
 device = torch.device("cuda")
 
@@ -135,7 +135,7 @@ class Actor(nn.Module):
 
         self.layernorm1 = nn.LayerNorm(32)
 
-        self.encoder1 = AttentionSplit(32, self.hidden_dim, 16)
+        self.encoder1 = AttentionSplit(32, self.hidden_dim, 4)
 
         self.fc2 = nn.Linear(self.hidden_dim, self.outputs)
         self.fc2.weight.data.copy_(Orthonorm_weight(self.fc2.weight))
@@ -206,7 +206,7 @@ class Agent:
         self.entropy_target = -torch.tensor(n_outputs)
 
         self.actor = Actor(n_inputs, n_outputs, self.hidden_dim, self.frames).to(device)
-        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
+        self.optim1 = OrthAdam(self.actor.parameters(), lr)
 
         self.critic1 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
         self.critic2 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
@@ -217,9 +217,9 @@ class Agent:
         self.critic1_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.optim2 = OrthAdam(self.critic1.parameters(), lr, amsgrad=True)
-        self.optim3 = OrthAdam(self.critic2.parameters(), lr, amsgrad=True)
-        self.optim4 = OrthAdam([self.temp], lr, amsgrad=True)
+        self.optim2 = OrthAdam(self.critic1.parameters(), lr)
+        self.optim3 = OrthAdam(self.critic2.parameters(), lr)
+        self.optim4 = OrthAdam([self.temp], lr)
 
         self.memory = ReplayMemory(
             capacity=memory_size,

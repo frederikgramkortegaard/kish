@@ -273,3 +273,179 @@ class AdamP(torch.optim.Optimizer):
                 p.data.add_(perturb, alpha=-step_size)
 
         return loss
+
+class RNAdamWP(torch.optim.Optimizer):
+
+    def __init__(
+        self,
+        params,
+        lr=0.001,
+        betas=(0.9, 0.999),
+        weight_decay=1e-2,
+        wd_ratio=0.1,
+        delta=0.1,
+        eps=1e-8,
+        max_grad=True,
+        project=True,
+        retrify=True,
+        nesterov=True,
+    ):
+        defaults = dict(
+            lr=lr,
+            weight_decay=weight_decay,
+            betas=betas,
+            wd_ratio=wd_ratio,
+            delta=delta,
+            eps=eps,
+            max_grad=max_grad,
+            project=project,
+            retrify=retrify,
+            nesterov=nesterov,
+        )
+        super(RNAdamWP, self).__init__(params, defaults)
+        if retrify:
+            self.phi = 2 / (1 - betas[1]) - 1
+
+    def _channel_view(self, x):
+        return x.view(x.size(0), -1)
+
+    def _layer_view(self, x):
+        return x.view(1, -1)
+
+    def _cosine_similarity(self, x, y, eps, view_func):
+        x = view_func(x)
+        y = view_func(y)
+
+        return F.cosine_similarity(x, y, dim=1, eps=eps).abs_()
+
+    def _projection(self, p, perturb, delta, wd_ratio, eps):
+        wd = 1
+        expand_size = [-1] + [1] * (len(p.shape) - 1)
+        for view_func in [self._channel_view, self._layer_view]:
+
+            cosine_sim = self._cosine_similarity(perturb, p.data, eps, view_func)
+
+            if cosine_sim.max() < delta / math.sqrt(view_func(p.data).size(1)):
+                p_n = p.data / view_func(p.data).norm(dim=1).view(expand_size).add_(eps)
+                perturb -= p_n * view_func(p_n * perturb).sum(dim=1).view(expand_size)
+                wd = wd_ratio
+
+                return perturb, wd
+
+        return perturb, wd
+
+    def step(self):
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+
+                J = p.grad.data
+                lr = group["lr"]
+
+                state = self.state[p]
+
+                # State initialization
+                if len(state) == 0:
+                    state["step"] = 0
+                    state["momentum"] = torch.zeros_like(p.data)
+                    state["momentum2"] = torch.zeros_like(p.data)
+                    if group["max_grad"]:
+                        state["momentum2_max"] = torch.zeros_like(p.data)
+
+                momentum, momentum2 = state["momentum"], state["momentum2"]
+                if group["max_grad"]:
+                    momentum2_max = state["momentum2_max"]
+                beta1, beta2 = group["betas"]
+                state["step"] += 1
+
+                step = state["step"]
+
+                momentum.mul_(beta1).add_(J * (1 - beta1))
+
+                momentum2.mul_(beta2).add_((J).pow(2) * (1 - beta2))
+
+                if group["max_grad"]:
+                    momentum2_max.copy_(torch.max(momentum2_max, momentum2))
+                    momentum2 = momentum2_max
+                else:
+                    momentum2 = momentum2
+
+                if group["nesterov"]:
+                    momentum = ((beta1 * momentum) / (1 - beta1 ** (step + 1))) + (
+                        ((1 - beta1) * J) / (1 - beta1 ** (step))
+                    )
+                else:
+                    bias_correction1 = 1 - beta1**step
+                    momentum = momentum / bias_correction1
+
+                if group["retrify"]:
+                    pt = self.phi - (2 * step * beta2**step) / (1 - beta2**step)
+                    if pt > 4:
+                        lt = math.sqrt(1 - beta2**step) / momentum2.sqrt().add(
+                            group["eps"]
+                        )
+                        rt = math.sqrt(
+                            ((pt - 4) * (pt - 2) * self.phi)
+                            / ((self.phi - 4) * (self.phi - 2) * pt)
+                        )
+                        update = momentum * lt * rt
+
+                        # Projection
+                        wd_ratio = 1
+                        if len(p.shape) > 1:
+                            update, wd_ratio = self._projection(
+                                p,
+                                update,
+                                group["delta"],
+                                group["wd_ratio"],
+                                group["eps"],
+                            )
+
+                        # Weight decay
+                        if group["weight_decay"] > 0:
+                            p.data.mul_(
+                                1 - group["lr"] * group["weight_decay"] * wd_ratio
+                            )
+
+                        p.data.add_(-update * lr)
+                    else:
+                        update = momentum
+                        # Projection
+                        wd_ratio = 1
+                        if len(p.shape) > 1:
+                            update, wd_ratio = self._projection(
+                                p,
+                                update,
+                                group["delta"],
+                                group["wd_ratio"],
+                                group["eps"],
+                            )
+
+                        # Weight decay
+                        if group["weight_decay"] > 0:
+                            p.data.mul_(
+                                1 - group["lr"] * group["weight_decay"] * wd_ratio
+                            )
+
+                        p.data.add_(-update * lr)
+                else:
+                    bias_correction2 = 1 - beta2**step
+                    momentum = (momentum) / (momentum2 / bias_correction2).sqrt().add(
+                        group["eps"]
+                    )
+
+                    update = momentum
+
+                    # Projection
+                    wd_ratio = 1
+                    if len(p.shape) > 1:
+                        update, wd_ratio = self._projection(
+                            p, update, group["delta"], group["wd_ratio"], group["eps"]
+                        )
+
+                    # Weight decay
+                    if group["weight_decay"] > 0:
+                        p.data.mul_(1 - group["lr"] * group["weight_decay"] * wd_ratio)
+
+                    p.data.add_(-update * lr)

@@ -18,7 +18,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Optimizer import OrthAdam
+from modules.Optimizer import RNAdamWP
 from modules.Attentionsplit import AttentionSplit
 from modules.VBlinear import VBLinear
 
@@ -38,7 +38,6 @@ class ReplayMemory:
         n_step,
         gamma,
         hidden_dim,
-        n_outputs,
     ):
         self.capacity = capacity
         self.mem_counter = 0
@@ -54,7 +53,7 @@ class ReplayMemory:
         self.new_state_memory = torch.zeros(
             (self.capacity, frames, height, width), dtype=torch.float32
         )
-        self.action_memory = torch.zeros(self.capacity, n_outputs, dtype=torch.float32)
+        self.action_memory = torch.zeros(self.capacity, dtype=torch.float32)
         self.reward_memory = torch.zeros(self.capacity, dtype=torch.float32)
         self.done_memory = torch.zeros(self.capacity, dtype=torch.int32)
         self.hidden_memmory = torch.zeros(
@@ -117,9 +116,9 @@ class ReplayMemory:
         return self.size
 
 
-class Actor(nn.Module):
+class Network(nn.Module):
     def __init__(self, actions):
-        super(Actor, self).__init__()
+        super(Network, self).__init__()
         self.actions = actions
 
         self.logstd = nn.Parameter(torch.zeros(1, actions))
@@ -175,56 +174,6 @@ class Actor(nn.Module):
         return self.action(x[:, -1, :]), self.logstd.clamp(-11, 11).exp(), c
 
 
-class Critic(nn.Module):
-    def __init__(self, n_actions, hidden_dim, frames):
-        super(Critic, self).__init__()
-
-        self.actions = n_actions
-        self.hidden_dim = hidden_dim
-
-        self.vision = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=11, padding=5),
-            nn.BatchNorm2d(16),
-            nn.GELU(),
-            nn.MaxPool2d(3),
-            nn.Conv2d(
-                in_channels=16, out_channels=32, kernel_size=7, padding=3, groups=8
-            ),
-            nn.GroupNorm(8, 32),
-            nn.GELU(),
-            nn.MaxPool2d(3),
-            nn.Conv2d(
-                in_channels=32, out_channels=64, kernel_size=3, padding=1, groups=16
-            ),
-            nn.GroupNorm(16, 64),
-            nn.GELU(),
-            nn.MaxPool2d(3),
-        )
-
-        for module in self.vision:
-            if isinstance(module, nn.Conv2d):
-                n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
-                nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
-
-        self.fc1 = nn.Linear(576 + n_actions, self.hidden_dim)
-        n1 = self.fc1.weight.shape[1] * self.fc1.weight.shape[0]
-        nn.init.normal_(self.fc1.weight, 0, math.sqrt(2 / n1))
-
-        self.layernorm1 = nn.LayerNorm(self.hidden_dim)
-
-        self.fc2 = nn.Linear(self.hidden_dim, 1)
-        n2 = self.fc2.weight.shape[1] * self.fc2.weight.shape[0]
-        nn.init.normal_(self.fc2.weight, 0, math.sqrt(2 / n2))
-
-        self.f = nn.GELU()
-
-    def forward(self, state, actions):
-        x = self.vision(state[:, -3:, :, :]).flatten(1)
-        x = torch.cat((x, actions), dim=1)
-        x = self.f(self.layernorm1(self.fc1(x)))
-        return self.fc2(x)
-
-
 class Agent:
     def __init__(
         self,
@@ -249,42 +198,17 @@ class Agent:
         self.frames = frames
         self.hidden_dim = hidden_dim
         self.tau = 0.005
-        self.temp = nn.Parameter(torch.tensor(0.2))
-        self.temp.to(device)
-        self.entropy_target = -torch.tensor(n_outputs)
 
-        self.actor = Actor(n_outputs).to(device)
-        self.optim1 = torch.optim.AdamW(
+        self.actor = Network(n_outputs).to(device)
+        self.optim1 = RNAdamWP(
             self.actor.parameters(),
             lr,
             weight_decay=weight_decay,
-            amsgrad=True,
         )
 
-        self.critic1 = Critic(n_outputs, self.hidden_dim, frames).to(device)
-        self.critic2 = Critic(n_outputs, self.hidden_dim, frames).to(device)
+        self.actor_target = Network(n_outputs).to(device)
+        self.actor_target.load_state_dict(self.actor.state_dict())
 
-        self.critic1_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
-        self.critic2_target = Critic(n_outputs, self.hidden_dim, frames).to(device)
-
-        self.critic1_target.load_state_dict(self.critic1.state_dict())
-        self.critic2_target.load_state_dict(self.critic2.state_dict())
-
-        self.optim2 = torch.optim.AdamW(
-            self.critic1.parameters(),
-            lr,
-            weight_decay=weight_decay,
-            amsgrad=True,
-        )
-        self.optim3 = torch.optim.AdamW(
-            self.critic2.parameters(),
-            lr,
-            weight_decay=weight_decay,
-            amsgrad=True,
-        )
-        self.optim4 = torch.optim.AdamW(
-            [self.temp], lr, weight_decay=weight_decay, amsgrad=True
-        )
         self.memory = ReplayMemory(
             capacity=mem_size,
             batch_size=batch_size,
@@ -294,45 +218,13 @@ class Agent:
             gamma=self.gamma,
             height=height,
             width=width,
-            n_outputs=n_outputs,
         )
-
-    def update_critic_(
-        self,
-        critic,
-        optim,
-        state,
-        action,
-        reward,
-        next_state,
-        mask,
-        a_log_prob,
-        actions,
-    ):
-
-        Q_values = critic(state, action)
-
-        with torch.no_grad():
-
-            q_1 = self.critic1_target(next_state, actions)
-            q_2 = self.critic2_target(next_state, actions)
-
-            q = torch.min(q_1, q_2)
-
-            v = mask * (q - self.temp * a_log_prob)
-            Q_target = reward + self.gamma * v
-
-        loss = torch.mean((Q_values - Q_target).pow(2))  # Equation 5 from SAC
-
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
 
     def update(self):
 
         samples = self.memory.sample_batch()
         state = samples["states"].to(device)
-        action = samples["actions"].to(device)
+        action = samples["actions"].to(device).view(-1, 1)
         next_state = samples["new_states"].to(device)
         reward = samples["rewards"].view(-1, 1).to(device)
         done = samples["dones"].view(-1, 1).to(device)
@@ -340,68 +232,26 @@ class Agent:
 
         mask = 1 - done
 
-        with torch.no_grad():
-            _, _, hiddens_ = self.actor(state, hiddens)
+        a, std, next_hidden = self.actor(state, hiddens)
+        probs = dist.Normal(a, std)
+        u = probs.rsample()
+        Q_vals = u.gather(1, action.long())
 
-        a_, std_, _ = self.actor(next_state, hiddens_)
-        probs_ = dist.Normal(a_, std_)
-        u_ = probs_.rsample()
-        a_log_prob_ = probs_.log_prob(u_)
-        actions_ = torch.tanh(u_)
-        a_log_prob_ -= torch.log(1 - actions_**2 + 1e-8)
+        an, stdn, _ = self.actor_target(next_state, next_hidden)
+        probsn = dist.Normal(an, stdn)
+        un = probsn.rsample()
+        Q_next = un.argmax(dim=1).detach().unsqueeze(-1)
 
-        self.update_critic_(
-            self.critic1,
-            self.optim2,
-            state,
-            action,
-            reward,
-            next_state,
-            mask,
-            a_log_prob_.detach(),
-            actions_.detach(),
-        )
-        self.update_critic_(
-            self.critic2,
-            self.optim3,
-            state,
-            action,
-            reward,
-            next_state,
-            mask,
-            a_log_prob_.detach(),
-            actions_.detach(),
-        )
+        Q_target = reward + (self.gamma * Q_next * mask).detach()
 
-        q_1 = self.critic1(next_state, actions_)
-        q_2 = self.critic2(next_state, actions_)
-        q = torch.min(q_1, q_2)
-
-        loss = (
-            self.temp.detach() * a_log_prob_ - q
-        ).mean()  # Update with equation 9 from SAC paper
+        loss = (Q_vals - Q_target).pow(2).mean() + 0.1 * self.actor.action.KL() # MSE loss
 
         self.optim1.zero_grad()
         loss.backward()
         self.optim1.step()
 
-        alpha_loss = (
-            -self.temp * (a_log_prob_ + self.entropy_target).detach()
-        ).mean()  # Update alpha / tempature parameter with equation 18 from SAC paper
-
-        self.optim4.zero_grad()
-        alpha_loss.backward()
-        self.optim4.step()
-
         for eval_param, target_param in zip(
-            self.critic1.parameters(), self.critic1_target.parameters()
-        ):
-            target_param.data.copy_(
-                target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
-            )
-
-        for eval_param, target_param in zip(
-            self.critic2.parameters(), self.critic2_target.parameters()
+            self.actor.parameters(), self.actor_target.parameters()
         ):
             target_param.data.copy_(
                 target_param.data * (1.0 - self.tau) + eval_param.data * self.tau
@@ -488,7 +338,7 @@ class Agent:
                 rewards.append(reward)
                 self.memory.store_transition(
                     state=state,
-                    action=action,
+                    action=action.argmax(dim=-1).item(),
                     reward=reward,
                     new_state=next_state,
                     done=done,

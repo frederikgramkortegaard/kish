@@ -29,7 +29,7 @@ if __name__ == "__main__":
         gamma=0.99,
         batch_size=32,
         memory_size=100000,
-        frames=6,
+        frames=5,
         hidden_dim=256,
         n_step=5
     )

@@ -35,7 +35,7 @@ if __name__ == "__main__":
         batch_size=32,
         mem_size=15000,
         gamma=0.99,
-        lr=3e-4,
+        lr=0.003,
         weight_decay=1e-2,
         height=state.shape[0],
         width=state.shape[1],

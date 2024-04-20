@@ -120,8 +120,6 @@ class Network(nn.Module):
         super(Network, self).__init__()
         self.actions = actions
 
-        self.logstd = nn.Parameter(torch.zeros(1, actions))
-        self.logstd.data.normal_(-9, 0.001)
         self.vision = nn.Sequential(
             nn.Conv2d(in_channels=1, out_channels=16, kernel_size=11, padding=5),
             nn.BatchNorm2d(16),
@@ -171,7 +169,7 @@ class Network(nn.Module):
 
         x, c = self.encoder(x, hidden)
 
-        return self.action(x[:, -1, :]), self.logstd.clamp(-11, 11).exp(), c
+        return self.action(x[:, -1, :]), c
 
 
 class Agent:
@@ -238,15 +236,11 @@ class Agent:
 
         mask = 1 - done
 
-        a, std, next_hidden = self.actor(state, hiddens)
-        probs = dist.Normal(a, std)
-        u = probs.rsample()
-        Q_vals = u.gather(1, action.long())
+        a, next_hidden = self.actor(state, hiddens)
+        Q_vals = a.gather(1, action.long())
 
-        an, stdn, _ = self.actor_target(next_state, next_hidden)
-        probsn = dist.Normal(an, stdn)
-        un = probsn.rsample()
-        Q_next = un.argmax(dim=1).detach().unsqueeze(-1)
+        an, _ = self.actor_target(next_state, next_hidden)
+        Q_next = an.argmax(dim=1).detach().unsqueeze(-1)
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
@@ -317,12 +311,10 @@ class Agent:
                     if np.random.uniform(size=1) >= self.epsilon:
                         with torch.no_grad():
                             self.actor.eval()
-                            a, std, hiddens = self.actor(
+                            action, hiddens = self.actor(
                                 torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
                             )
-                            probs = dist.Normal(a, std)
-                            u = probs.rsample()
-                            action = torch.tanh(u).argmax(dim=-1).item()
+                            action = action.argmax(dim=-1).detach().cpu().item()
                             self.actor.train()
                     else:
                         action = self.env.action_space.sample()

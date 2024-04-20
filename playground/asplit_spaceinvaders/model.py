@@ -20,7 +20,6 @@ sys.path.append(
 
 from modules.Optimizer import RNAdamWP
 from modules.Attentionsplit import AttentionSplit
-from modules.VBlinear import VBLinear
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -148,9 +147,10 @@ class Network(nn.Module):
                 nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         # Forward sequence
-        self.encoder = AttentionSplit(576, 576, 8)
+        self.encoder = AttentionSplit(576, 576, 4)
 
-        self.action = VBLinear(576, self.actions)
+        self.action = nn.Linear(576, self.actions)
+        self.action.weight.data.normal_(0, math.sqrt(2 / self.action.weight.numel()))
 
         self.to(device)
 
@@ -189,6 +189,9 @@ class Agent:
         env,
         height,
         width,
+        epsilon,
+        epsilon_decay,
+        epsilon_min,
     ):
 
         self.env = env
@@ -198,6 +201,9 @@ class Agent:
         self.frames = frames
         self.hidden_dim = hidden_dim
         self.tau = 0.005
+        self.epsilon = epsilon
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_min = epsilon_min
 
         self.actor = Network(n_outputs).to(device)
         self.optim1 = RNAdamWP(
@@ -244,7 +250,7 @@ class Agent:
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
-        loss = (Q_vals - Q_target).pow(2).mean() + 0.1 * self.actor.action.KL() # MSE loss
+        loss = (Q_vals - Q_target).pow(2).mean() # MSE loss
 
         self.optim1.zero_grad()
         loss.backward()
@@ -308,22 +314,23 @@ class Agent:
             while not done and not truncated:
 
                 if j % 3 == 0:
-                    with torch.no_grad():
-                        self.actor.eval()
-                        a, std, hiddens = self.actor(
-                            torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
-                        )
-                        probs = dist.Normal(a, std)
-                        u = probs.rsample()
-                        action = torch.tanh(u)
-                        self.actor.train()
+                    if np.random.uniform(size=1) >= self.epsilon:
+                        with torch.no_grad():
+                            self.actor.eval()
+                            a, std, hiddens = self.actor(
+                                torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
+                            )
+                            probs = dist.Normal(a, std)
+                            u = probs.rsample()
+                            action = torch.tanh(u).argmax(dim=-1).item()
+                            self.actor.train()
+                    else:
+                        action = self.env.action_space.sample()
 
-                if render and len(self.memory) > 1000:
+                if render and len(self.memory) > 10000:
                     self.env.render()
 
-                next_state, reward, done, truncated, _ = self.env.step(
-                    action.argmax(dim=-1).item()
-                )
+                next_state, reward, done, truncated, _ = self.env.step(action)
 
                 next_state, stacked_frames = self.stack_frames(
                     stacked_frames,
@@ -338,7 +345,7 @@ class Agent:
                 rewards.append(reward)
                 self.memory.store_transition(
                     state=state,
-                    action=action.argmax(dim=-1).item(),
+                    action=action,
                     reward=reward,
                     new_state=next_state,
                     done=done,
@@ -346,8 +353,9 @@ class Agent:
                 )
                 prev_hiddens = hiddens
 
-                if len(self.memory) > 1000 and j % 3 == 0:
+                if len(self.memory) > 10000 and j % 3 == 0:
                     loss = self.update().item()
+                    self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:
                     loss = 1
                 losses.append(loss)
@@ -359,6 +367,8 @@ class Agent:
                     print("Loss: ", sum(losses))
                     print("Average reward: ", sum(rewards) / len(rewards))
                     print("Average loss: ", sum(losses) / len(losses))
+                    if self.epsilon != self.epsilon_min:
+                        print("Current epsilon: ", self.epsilon)
                     print()
                 if (t % 1000) == 0:
                     yield (rewards, losses)

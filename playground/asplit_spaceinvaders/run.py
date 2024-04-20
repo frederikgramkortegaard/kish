@@ -30,10 +30,10 @@ if __name__ == "__main__":
     env.metadata["render_fps"] = 1000
     agent = Agent(
         env=env,
-        frames=9,
-        n_step=9,
+        frames=5,
+        n_step=5,
         batch_size=32,
-        mem_size=10000,
+        mem_size=15000,
         gamma=0.99,
         lr=3e-4,
         weight_decay=1e-2,
@@ -41,6 +41,9 @@ if __name__ == "__main__":
         width=state.shape[1],
         n_outputs=env.action_space.n,
         hidden_dim=576,
+        epsilon=1.0,
+        epsilon_decay=0.99995,
+        epsilon_min=0.01,
     )
 
     live_report_reinforcement_agent(

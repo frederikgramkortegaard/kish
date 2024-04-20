@@ -115,6 +115,7 @@ class ReplayMemory:
         return self.size
 
 
+# Main ANN class, contains visual, sequantial and action layer activations for Atari Environments
 class Network(nn.Module):
     def __init__(self, actions):
         super(Network, self).__init__()
@@ -171,7 +172,9 @@ class Network(nn.Module):
 
         return self.action(x[:, -1, :]), c
 
-
+# Main Reinforcement Agent class
+# Contains a training loop, which utilizes a DQL to provide training losses
+# We use a decreasing epsilon / random action schedule to force the agent to new state spaces
 class Agent:
     def __init__(
         self,
@@ -224,6 +227,7 @@ class Agent:
             width=width,
         )
 
+    # Defines the DQL update rule for the agent
     def update(self):
 
         samples = self.memory.sample_batch()
@@ -259,6 +263,7 @@ class Agent:
 
         return loss
 
+    # We use frame stacking to create sequential data for the agent to learn
     def stack_frames(self, stacked_frames, state, is_new_episode, max_frames):
         if is_new_episode:
             stacked_frames = deque(
@@ -278,6 +283,8 @@ class Agent:
 
         return torch.FloatTensor(stacked_state), stacked_frames
 
+    # Main training loop.
+    # We use a frameskip for both the action and update, to provide schochasticity in the actions as well as saving GPU ressources
     def train(self, timesteps, render):
         t = 0
         rewards = []
@@ -318,6 +325,7 @@ class Agent:
                             self.actor.train()
                     else:
                         action = self.env.action_space.sample()
+                        hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * torch.tensor(np.random.uniform(size=1), device=device)
 
                 if render and len(self.memory) > 10000:
                     self.env.render()

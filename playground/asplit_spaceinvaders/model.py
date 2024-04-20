@@ -338,7 +338,7 @@ class Agent:
                 self.memory.store_transition(
                     state=state,
                     action=action,
-                    reward=reward,
+                    reward=min(reward, 5),
                     new_state=next_state,
                     done=done,
                     hidden=prev_hiddens,

@@ -9,6 +9,7 @@ import os
 import numpy as np
 import math
 import cv2
+import matplotlib.pyplot as plt
 
 from skimage.util import crop
 from skimage.color import rgb2gray
@@ -67,7 +68,6 @@ class ReplayMemory:
     def store_transition(self, state, new_state, action, reward, done, hidden):
 
         hidden = hidden.view(self.frames, self.n_hidden)
-        reward = torch.tensor(reward).to(device).clamp(0, 1)
         self.n_mem.append(reward)
         if len(self.n_mem) < self.n_mem.maxlen:
             return
@@ -82,6 +82,7 @@ class ReplayMemory:
         new_state = new_state.to(device)
 
         done = torch.tensor(done).to(device)
+        reward = torch.tensor(reward).to(device)
 
         self.state_memory[self.index] = state
         self.new_state_memory[self.index] = new_state
@@ -137,7 +138,7 @@ class Network(nn.Module):
             ),
             nn.GroupNorm(16, 64),
             nn.GELU(),
-            nn.MaxPool2d(3),
+            nn.MaxPool2d(4),
         )
 
         for module in self.vision:
@@ -146,9 +147,9 @@ class Network(nn.Module):
                 nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         # Forward sequence
-        self.encoder = AttentionSplit(576, 576, 4)
+        self.encoder = AttentionSplit(256, 256, 4)
 
-        self.action = nn.Linear(576, self.actions)
+        self.action = nn.Linear(256, self.actions)
         self.action.weight.data.normal_(0, math.sqrt(2 / self.action.weight.numel()))
 
         self.to(device)
@@ -162,9 +163,7 @@ class Network(nn.Module):
 
         # Reshape states to combine batch_size and num_frames dimensions
         states = states.view(-1, states.shape[2], states.shape[3], states.shape[4])
-
         x = self.vision(states)
-
         # Reshape back to (batch_size, num_frames, -1)
         x = x.view(batch_size, num_frames, -1)
 
@@ -280,6 +279,10 @@ class Agent:
         else:
             stacked_frames.append(state)
             stacked_state = np.stack(stacked_frames, axis=0)
+            for i in range(stacked_state.shape[0]):
+                if i == 0:
+                    continue
+                stacked_state[i] = np.maximum(stacked_state[i], stacked_state[i-1])
 
         return torch.FloatTensor(stacked_state), stacked_frames
 
@@ -288,12 +291,13 @@ class Agent:
     def train(self, timesteps, render):
         t = 0
         rewards = []
+        observed_rewards = []
         losses = []
         while t <= timesteps:
 
             done = False
             truncated = False
-            state, _ = self.env.reset()
+            state, info = self.env.reset()
             state = cv2.resize(
                 rgb2gray(crop(state, ((13, 13), (15, 25), (0, 0)))), (84, 84)
             )
@@ -310,6 +314,8 @@ class Agent:
             )
 
             j = 0
+            lives = info["lives"]
+
             hiddens = torch.zeros((self.frames, self.hidden_dim)).to(device)
             prev_hiddens = hiddens.clone()
             while not done and not truncated:
@@ -327,11 +333,9 @@ class Agent:
                         action = self.env.action_space.sample()
                         hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * torch.tensor(np.random.uniform(size=1), device=device)
 
-                if render and len(self.memory) > 10000:
-                    self.env.render()
 
-                next_state, reward, done, truncated, _ = self.env.step(action)
-
+                next_state, reward, done, truncated, info = self.env.step(action)
+                
                 next_state, stacked_frames = self.stack_frames(
                     stacked_frames,
                     cv2.resize(
@@ -343,17 +347,25 @@ class Agent:
                 )
 
                 rewards.append(reward)
+    
+                if reward > 0:
+                    reward = min(reward, 5)
+                if lives > info["lives"]:
+                    lives = info["lives"]
+                    reward -= 1
+
+                observed_rewards.append(reward)
                 self.memory.store_transition(
                     state=state,
                     action=action,
-                    reward=min(reward, 5),
+                    reward=reward,
                     new_state=next_state,
                     done=done,
                     hidden=prev_hiddens,
                 )
                 prev_hiddens = hiddens
 
-                if len(self.memory) > 10000 and j % 3 == 0:
+                if len(self.memory) >= self.memory.capacity - 1 and j % 3 == 0:
                     loss = self.update().item()
                     self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:
@@ -364,8 +376,10 @@ class Agent:
                 if (t % 100) == 0:
                     print("timestep: ", t)
                     print("Reward: ", sum(rewards))
+                    print("Observed reward: ", sum(observed_rewards))
                     print("Loss: ", sum(losses))
                     print("Average reward: ", sum(rewards) / len(rewards))
+                    print("Average observed reward: ", sum(observed_rewards) / len(observed_rewards))
                     print("Average loss: ", sum(losses) / len(losses))
                     if self.epsilon != self.epsilon_min:
                         print("Current epsilon: ", self.epsilon)
@@ -373,6 +387,7 @@ class Agent:
                 if (t % 1000) == 0:
                     yield (rewards, losses)
                     rewards = []
+                    observed_rewards = []
                     losses = []
 
                 j += 1

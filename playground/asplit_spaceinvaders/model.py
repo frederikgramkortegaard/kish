@@ -21,6 +21,7 @@ sys.path.append(
 
 from modules.Optimizer import RNAdamWP
 from modules.Attentionsplit import AttentionSplit
+from modules.VBlinear import VBLinear
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -149,8 +150,7 @@ class Network(nn.Module):
         # Forward sequence
         self.encoder = AttentionSplit(256, 256, 4)
 
-        self.action = nn.Linear(256, self.actions)
-        self.action.weight.data.normal_(0, math.sqrt(2 / self.action.weight.numel()))
+        self.action = VBLinear(256, self.actions)
 
         self.to(device)
 
@@ -170,7 +170,7 @@ class Network(nn.Module):
         x, c = self.encoder(x, hidden)
 
         return self.action(x[:, -1, :]), c
-
+import time
 # Main Reinforcement Agent class
 # Contains a training loop, which utilizes a DQL to provide training losses
 # We use a decreasing epsilon / random action schedule to force the agent to new state spaces
@@ -247,7 +247,7 @@ class Agent:
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
-        loss = (Q_vals - Q_target).pow(2).mean() # MSE loss
+        loss = (Q_vals - Q_target).pow(2).mean() + 0.1 * self.actor.action.KL() # MSE loss
 
         self.optim1.zero_grad()
         loss.backward()
@@ -279,10 +279,17 @@ class Agent:
         else:
             stacked_frames.append(state)
             stacked_state = np.stack(stacked_frames, axis=0)
+            h, w = stacked_state[0].shape
             for i in range(stacked_state.shape[0]):
                 if i == 0:
                     continue
+                indices = np.random.choice(a=h*w, size=int(h*w*0.1), replace=False)
+                stacked_state[i-1].flat[indices] = 0
+                stacked_state[i-1] = stacked_state[i-1].reshape(h, w)
                 stacked_state[i] = np.maximum(stacked_state[i], stacked_state[i-1])
+                #plt.imshow(stacked_state[i], cmap="gray")
+                #plt.draw()
+                #plt.pause(0.00000000000000000001)
 
         return torch.FloatTensor(stacked_state), stacked_frames
 
@@ -320,18 +327,18 @@ class Agent:
             prev_hiddens = hiddens.clone()
             while not done and not truncated:
 
-                if j % 3 == 0:
-                    if np.random.uniform(size=1) >= self.epsilon:
-                        with torch.no_grad():
-                            self.actor.eval()
-                            action, hiddens = self.actor(
-                                torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
-                            )
-                            action = action.argmax(dim=-1).detach().cpu().item()
-                            self.actor.train()
-                    else:
-                        action = self.env.action_space.sample()
-                        hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * torch.tensor(np.random.uniform(size=1), device=device)
+
+                if np.random.uniform(size=1) >= self.epsilon:
+                    with torch.no_grad():
+                        self.actor.eval()
+                        action, hiddens = self.actor(
+                            torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
+                        )
+                        action = action.argmax(dim=-1).detach().cpu().item()
+                        self.actor.train()
+                else:
+                    action = self.env.action_space.sample()
+                    hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * torch.tensor(np.random.uniform(size=1), device=device)
 
 
                 next_state, reward, done, truncated, info = self.env.step(action)
@@ -365,7 +372,7 @@ class Agent:
                 )
                 prev_hiddens = hiddens
 
-                if len(self.memory) >= self.memory.capacity - 1 and j % 3 == 0:
+                if len(self.memory) >= self.memory.capacity - 1:
                     loss = self.update().item()
                     self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:

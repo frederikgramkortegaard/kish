@@ -338,7 +338,7 @@ class Agent:
                         self.actor.train()
                 else:
                     action = self.env.action_space.sample()
-                    hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * torch.tensor(np.random.uniform(size=1), device=device)
+                    hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * state.std()
 
 
                 next_state, reward, done, truncated, info = self.env.step(action)

@@ -153,9 +153,9 @@ class Agent:
         self.batch_size = batch_size
         self.memory_size = memory_size
 
-        self.model = Network(n_inputs, n_outputs).to(device)
-        self.optimizer = OrthAdam(self.model.parameters(), lr=0.003, weight_decay=1e-4)
-        self.memory = ReplayMemory(memory_size, 256, n_inputs)
+        self.actor = Network(n_inputs, n_outputs).to(device)
+        self.optimizer = OrthAdam(self.actor.parameters(), lr=self.lr, weight_decay=1e-4)
+        self.memory = ReplayMemory(memory_size, self.batch_size, n_inputs)
 
     def update(self):
 
@@ -169,9 +169,9 @@ class Agent:
 
         mask = 1 - done
 
-        Q_value = self.model(state).gather(1, action.long())
+        Q_value = self.actor(state).gather(1, action.long())
 
-        Q_next = self.model(next_state).gather(1, next_action.long()).detach()
+        Q_next = self.actor(next_state).argmax(dim=1, keepdim=True).detach()
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
@@ -183,142 +183,108 @@ class Agent:
 
         return loss.item()
 
-    def train(self, episodes, render):
-        for e in range(episodes):
+    def train(self, timesteps, render):
+        t = 0
+        rewards = []
+        losses = []
+
+        while t <= timesteps:
+
             done = False
             truncated = False
-
             state, _ = self.env.reset()
-            if np.random.uniform(0, 1) >= self.epsilon:
+            
+            if np.random.uniform(size=1) >= self.epsilon:
                 with torch.no_grad():
-                    self.model.eval()
-                    action = torch.argmax(
-                        self.model(torch.FloatTensor(state).to(device))
-                    ).item()
-                    self.model.train()
+                    self.actor.eval()
+                    action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
+                    self.actor.train()
             else:
                 action = self.env.action_space.sample()
-            episode_reward = 0
 
-            states = []
-            actions = []
-            rewards = []
-            losses = []
-            next_states = []
-            dones = []
-            next_actions = []
-
-            while not done or not truncated:
-                if render and len(self.memory) >= self.memory.capacity - 1:
-                    self.env.render()
+            while not done or truncated:
 
                 next_state, reward, done, truncated, _ = self.env.step(action)
 
-                states.append(state)
-                actions.append(action)
-                rewards.append(reward)
-                next_states.append(next_state)
-                dones.append(done)
-
-                if np.random.uniform(0, 1) >= self.epsilon:
+                if np.random.uniform(size=1) >= self.epsilon:
                     with torch.no_grad():
-                        self.model.eval()
-                        next_action = torch.argmax(
-                            self.model(torch.FloatTensor(next_state).to(device))
-                        ).item()
-                        self.model.train()
+                        self.actor.eval()
+                        next_action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
+                        self.actor.train()
                 else:
                     next_action = self.env.action_space.sample()
-                next_actions.append(next_action)
+
+                rewards.append(reward)
+
                 self.memory.store_transition(
-                    state, action, reward, next_state, next_action, done
+                    state=state,
+                    action=action,
+                    reward=reward,
+                    state_=next_state,
+                    next_action=next_action,
+                    done=done,
                 )
 
                 if len(self.memory) >= self.memory.capacity - 1:
                     loss = self.update()
-                    self.epsilon = max(self.epsilon * 0.99, 0.01)
+                    self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:
                     loss = 1
                 losses.append(loss)
                 state = next_state
                 action = next_action
 
-                episode_reward += reward
+                if (t % 100) == 0:
+                    print("timestep: ", t)
+                    print("Reward: ", sum(rewards))
+                    print("Loss: ", sum(losses))
+                    print("Average reward: ", sum(rewards) / len(rewards))
+                    print("Average loss: ", sum(losses) / len(losses))
+                    if self.epsilon != self.epsilon_min:
+                        print("Current epsilon: ", self.epsilon)
+                    print()
 
-            print(e)
-            print(episode_reward)
-            yield (
-                states,
-                actions,
-                rewards,
-                losses,
-                next_states,
-                dones,
-                next_actions,
-            )
+                if (t % 1000) == 0:
+                    yield (rewards, losses)
+                    rewards = []
+                    losses = []
+                t += 1
+                if not (t <= timesteps):
+                    break
 
-    def test(self, episodes, render):
-        for e in range(episodes):
+    def test(self, timesteps, render):
+        t = 0
+        states = []
+        next_actions = []
+        self.actor.eval()
+        while t <= timesteps:
+
             done = False
-            truncated = False
-
             state, _ = self.env.reset()
+
+            j = 0
+            
             with torch.no_grad():
-                self.model.eval()
-                action = torch.argmax(
-                    self.model(torch.FloatTensor(state).to(device))
-                ).item()
-                self.model.train()
+                action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
 
-            episode_reward = 0
+            while not done:
 
-            states = []
-            actions = []
-            rewards = []
-            losses = []
-            next_states = []
-            dones = []
-            next_actions = []
-
-            while not done or not truncated:
-                if render and len(self.memory) >= self.memory.capacity - 1:
-                    self.env.render()
-
-                next_state, reward, done, truncated, _ = self.env.step(action)
-
-                states.append(state)
-                actions.append(action)
-                rewards.append(reward)
-                next_states.append(next_state)
-                dones.append(done)
+                next_state, _, done, _, _ = self.env.step(action)
 
                 with torch.no_grad():
-                    self.model.eval()
-                    next_action = torch.argmax(
-                        self.model(torch.FloatTensor(next_state).to(device))
-                    ).item()
-                    self.model.train()
+                    next_action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
 
-                next_actions.append(next_action)
-                self.memory.store_transition(
-                    state, action, reward, next_state, next_action, done
-                )
-
-                loss = 1
-                losses.append(loss)
                 state = next_state
                 action = next_action
+                states.append(state)
+                next_actions.append(action)
 
-                episode_reward += reward
+                if (t % 1000) == 0:
+                    yield (states, next_actions)
+                    states = []
+                    next_actions = []
 
-            print(e)
-            print(episode_reward)
-            yield (
-                states,
-                actions,
-                rewards,
-                losses,
-                next_states,
-                dones,
-                next_actions,
-            )
+                j += 1
+                t += 1
+                if not (t <= timesteps):
+                    break

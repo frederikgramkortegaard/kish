@@ -51,6 +51,8 @@ if __name__ == "__main__":
         os.mkdir(args.checkpointpath)
 
     if args.disable_transforms:
+        if args.debug:
+            print("Disabling transforms")
 
         train_transform = transforms.Compose(
             [
@@ -69,6 +71,8 @@ if __name__ == "__main__":
             ]
         )
     else:
+        if args.debug:
+            print("Using transforms")
         # Define the transformation for the dataset
         train_transform = transforms.Compose(
             [
@@ -278,7 +282,7 @@ if __name__ == "__main__":
                 "resnext_accuracies": resnext_accuracies,
             },
             f"{args.resultspath}/{name}_{end_time}{'_no_augments' if args.disable_transforms else '_with_augments'}.pt",
-        )
+        )   
 
         if args.epochs != 0:
             print(

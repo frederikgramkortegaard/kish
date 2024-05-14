@@ -16,9 +16,6 @@ coverage.xml
 *.rar 
 *.tar
 venv1
-*.png
-*.jpeg
-*.jpg
 .gradle
 .hypothesis
 .mypy_cache

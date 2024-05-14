@@ -19,7 +19,7 @@ def generate_graph(dataset, name, show, save, graphpath, output_name=None, title
 
     resnet_label = "Resnet18              (Max: {:.2f}%)".format(max(dataset['resnet_accuracies'])*100)
     densenet_label = "Densenet121        (Max: {:.2f}%)".format(max(dataset['densenet_accuracies'])*100)
-    resnext_label = "ResNext50_34x4d (Max: {:.2f}%)".format(max(dataset['resnext_accuracies'])*100)
+    resnext_label = "ResNext50_32x4d (Max: {:.2f}%)".format(max(dataset['resnext_accuracies'])*100)
     
     plt.plot([x*100 for x in dataset['resnet_accuracies']], label=resnet_label)
     plt.plot([x*100 for x in dataset['densenet_accuracies']], label=densenet_label)
@@ -61,5 +61,5 @@ if __name__ == "__main__":
     for file in os.listdir(args.results):
         if file.endswith('.pt'):
             results = torch.load(os.path.join(args.results, file))
-            generate_graph(results, file.split('_')[0], args.show, args.save, args.graph_path, output_name=file+'_'+str(time.time()), title="(no augments)")
+            generate_graph(results, file.split('_')[0], args.show, args.save, args.graph_path, output_name=file+'_'+str(time.time()), title="(no augments)" if "no_augments" in file else "(with augments)")
 

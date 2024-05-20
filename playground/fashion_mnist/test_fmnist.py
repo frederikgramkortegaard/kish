@@ -60,6 +60,7 @@ if __name__ == "__main__":
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
+                transforms.Grayscale(num_output_channels=3)
             ]
         )
         test_transform = transforms.Compose(
@@ -68,6 +69,7 @@ if __name__ == "__main__":
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
+                transforms.Grayscale(num_output_channels=3)
             ]
         )
     else:

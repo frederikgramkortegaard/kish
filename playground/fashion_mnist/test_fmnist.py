@@ -164,8 +164,8 @@ if __name__ == "__main__":
                 print(f"\t\tEpoch: {epoch}")
             densenet.train()
             for i, (inputs, targets) in enumerate(trainloader):
-                # Resize inputs to 224x224
-                inputs = torch.nn.functional.interpolate(inputs, size=(224, 224))
+                # Resize inputs
+                inputs = torch.nn.functional.interpolate(inputs, size=(32,32))
                 inputs, targets = inputs.to(device), targets.to(device)
                 densenet_optimizer.zero_grad()
                 outputs = densenet(inputs)
@@ -176,6 +176,7 @@ if __name__ == "__main__":
                 densenet_optimizer.step()
             densenet_scheduler.step()
 
+
             # test densenet121
             if args.debug:
                 print("\tTesting DenseNet121")
@@ -184,8 +185,8 @@ if __name__ == "__main__":
             densenet_correct = 0
             densenet_total = 0
             for i, (inputs, targets) in enumerate(testloader):
-                #resize inputs to 224x224
-                inputs = torch.nn.functional.interpolate(inputs, size=(224, 224))
+                #resize inputs
+                inputs = torch.nn.functional.interpolate(inputs, size=(32,32))
                 inputs, targets = inputs.to(device), targets.to(device)
 
                 outputs = densenet(inputs)

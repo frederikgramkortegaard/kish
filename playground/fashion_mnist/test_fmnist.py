@@ -44,6 +44,8 @@ if __name__ == "__main__":
     argparse.add_argument("-disable_transforms", action="store_true", default=False)
     args = argparse.parse_args()
 
+    print(f"Using args: {args}")
+
     if not os.path.isdir(args.resultspath):
         os.mkdir(args.resultspath)
 

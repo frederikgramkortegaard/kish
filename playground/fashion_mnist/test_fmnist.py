@@ -57,19 +57,19 @@ if __name__ == "__main__":
         train_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Lambda(lambda x: x.repeat(3, 1, 1) ),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
-                transforms.Grayscale(num_output_channels=3)
             ]
         )
         test_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Lambda(lambda x: x.repeat(3, 1, 1) ),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
-                transforms.Grayscale(num_output_channels=3)
             ]
         )
     else:
@@ -80,20 +80,21 @@ if __name__ == "__main__":
             [
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
+                transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
-                transforms.Grayscale(num_output_channels=3)
 
             ]
         )
         test_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
-                transforms.Grayscale(num_output_channels=3)
+                
 
             ]
         )
@@ -163,6 +164,8 @@ if __name__ == "__main__":
                 print(f"\t\tEpoch: {epoch}")
             densenet.train()
             for i, (inputs, targets) in enumerate(trainloader):
+                # Resize inputs to 224x224
+                inputs = torch.nn.functional.interpolate(inputs, size=(224, 224))
                 inputs, targets = inputs.to(device), targets.to(device)
                 densenet_optimizer.zero_grad()
                 outputs = densenet(inputs)
@@ -181,7 +184,10 @@ if __name__ == "__main__":
             densenet_correct = 0
             densenet_total = 0
             for i, (inputs, targets) in enumerate(testloader):
+                #resize inputs to 224x224
+                inputs = torch.nn.functional.interpolate(inputs, size=(224, 224))
                 inputs, targets = inputs.to(device), targets.to(device)
+
                 outputs = densenet(inputs)
                 _, predicted = torch.max(outputs, 1)
                 densenet_total += targets.size(0)

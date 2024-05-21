@@ -8,6 +8,8 @@ import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 
+from matplotlib import pyplot as plt
+
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
@@ -44,6 +46,10 @@ if __name__ == "__main__":
     argparse.add_argument("-disable_transforms", action="store_true", default=False)
     args = argparse.parse_args()
 
+
+    if args.debug:
+        print(args)
+
     if not os.path.isdir(args.resultspath):
         os.mkdir(args.resultspath)
 
@@ -57,6 +63,7 @@ if __name__ == "__main__":
         train_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
@@ -65,6 +72,7 @@ if __name__ == "__main__":
         test_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
@@ -76,8 +84,8 @@ if __name__ == "__main__":
         # Define the transformation for the dataset
         train_transform = transforms.Compose(
             [
-                transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
@@ -86,6 +94,7 @@ if __name__ == "__main__":
         test_transform = transforms.Compose(
             [
                 transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.Normalize(
                     (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
                 ),
@@ -95,7 +104,7 @@ if __name__ == "__main__":
     # Load the SVHN dataset
     trainset = torchvision.datasets.SVHN(
         root=args.datapath,
-        train=True,
+        split="train",
         download=True,
         transform=train_transform,
     )
@@ -105,7 +114,7 @@ if __name__ == "__main__":
 
     testset = torchvision.datasets.SVHN(
         root=args.datapath,
-        train=False,
+        split="test",
         download=True,
         transform=test_transform,
     )

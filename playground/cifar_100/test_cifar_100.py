@@ -121,7 +121,7 @@ if __name__ == "__main__":
             print(f"Training with optimizer: {name}")
 
         # Setup DenseNet
-        densenet = densenet121(num_classes=10)
+        densenet = densenet121(num_classes=100)
         densenet_criterion = nn.CrossEntropyLoss()
         densenet_optimizer = optim(densenet.parameters(), lr=0.003, weight_decay=3e-4)
         densenet_scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -129,7 +129,7 @@ if __name__ == "__main__":
         )
 
         # Setup ResNet
-        resnet = resnet18(num_classes=10)
+        resnet = resnet18(num_classes=100)
         resnet_criterion = nn.CrossEntropyLoss()
         resnet_optimizer = optim(resnet.parameters(), lr=0.003, weight_decay=3e-4)
         resnet_scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -137,7 +137,7 @@ if __name__ == "__main__":
         )
 
         # Setup ResNext
-        resnext = resnext50_32x4d(num_classes=10)
+        resnext = resnext50_32x4d(num_classes=100)
         resnext_criterion = nn.CrossEntropyLoss()
         resnext_optimizer = optim(resnext.parameters(), lr=0.003, weight_decay=3e-4)
         resnext_scheduler = torch.optim.lr_scheduler.MultiStepLR(

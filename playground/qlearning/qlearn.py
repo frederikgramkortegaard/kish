@@ -1,4 +1,4 @@
-""" Implementation of a Deep SARSA Agent to solve the CartPole-v1 environment. """
+""" Implementation of a Deep Q-Learning Agent. """
 
 import torch
 import numpy as np

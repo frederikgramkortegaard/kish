@@ -20,7 +20,7 @@ from kish.runners import (
 from kish.graphing import live_report_reinforcement_agent
 
 # Model Specification
-from sarsa import Agent as DeepSARSA
+from playground.qlearning.qlearn import Agent as QLearningAgent
 from Attention import agent as Agent2
 
 if __name__ == "__main__":
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
             envi = gym.make(env, render_mode="rgb_array")
 
-            agent = DeepSARSA(
+            agent = QLearningAgent(
                 env=envi,
                 n_inputs=envi.observation_space.shape[0],
                 n_outputs=envi.action_space.n,

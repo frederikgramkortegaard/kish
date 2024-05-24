@@ -1,4 +1,4 @@
-""" Implementation of a Deep Q-Learning Agent. """
+""" Implementation of a Deep Q-learning Agent to solve the Classic Control environments. """
 
 import torch
 import numpy as np
@@ -6,12 +6,13 @@ import torch.nn as nn
 import os
 import math
 import sys
+from collections import deque
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Optimizer import OrthAdam
+import modules.Optimizer as optim
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -39,7 +40,9 @@ def Orthonorm_weight(weight):
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
 class ReplayMemory:
-    def __init__(self, capacity, batch_size, input):
+    def __init__(self, capacity, batch_size, input, n_step, gamma):
+        self.gamma = gamma
+        self.n_step = n_step
         self.capacity = capacity
         self.mem_counter = 0
         self.mem_size = 0
@@ -58,6 +61,7 @@ class ReplayMemory:
         self.terminal_memory = torch.zeros(self.capacity, dtype=torch.float32).to(
             device
         )
+        self.n_mem = deque(maxlen=n_step)
         self.max_size = self.capacity
         self.batch_size = batch_size
         self.index = 0
@@ -67,7 +71,26 @@ class ReplayMemory:
     # if the n-step buffer is not larger than n, we only store the transition there
     def store_transition(self, state, action, reward, state_, next_action, done):
 
-        state = torch.tensor(state).to(device)
+        self.n_mem.append((state, action, reward, state_, next_action, done))
+        if len(self.n_mem) < self.n_mem.maxlen:
+            return
+
+        # Calculate n_step reward
+        temp = self.n_mem.copy()
+        state, action, rew, _, _, _ = temp[0]
+        sum_reward = 0
+        for i in range(len(temp)):
+            if i == 0:
+                sum_reward += rew
+                continue
+            _, _, rew, state_, next_action, done = temp[i]
+            if done:
+                sum_reward += rew * self.gamma**i
+                break
+            sum_reward += rew * self.gamma**i
+        reward = sum_reward
+        
+        state = torch.tensor(state).to(device)  
         action = torch.tensor(action).to(device)
         reward = torch.tensor(reward).to(device)
         state_ = torch.tensor(state_).to(device)
@@ -108,18 +131,18 @@ class ReplayMemory:
         return self.size
 
 class Network(nn.Module):
-    def __init__(self, inputs, actions):
+    def __init__(self, inputs, hidden, actions):
         super(Network, self).__init__()
         self.input = inputs
         self.action = actions
 
-        self.fc1 = nn.Linear(self.input, 256)
+        self.fc1 = nn.Linear(self.input, hidden)
         Orthonorm_weight(self.fc1.weight)
 
-        self.action = nn.Linear(256, self.action)
+        self.action = nn.Linear(hidden, self.action)
         Orthonorm_weight(self.action.weight)
 
-        self.layer_norm1 = nn.LayerNorm(256)
+        self.layer_norm1 = nn.LayerNorm(hidden)
 
         self.f = nn.GELU()
 
@@ -129,7 +152,6 @@ class Network(nn.Module):
 
 
 class Agent:
-    """Deep SARSA (Replay Buffer Off-Policy Variation) Agent"""
 
     def __init__(
         self,
@@ -143,6 +165,9 @@ class Agent:
         epsilon_min,
         batch_size,
         memory_size,
+        n_step,
+        hidden,
+        tau
     ):
         self.env = env
         self.lr = lr
@@ -152,10 +177,14 @@ class Agent:
         self.epsilon_min = epsilon_min
         self.batch_size = batch_size
         self.memory_size = memory_size
+        self.tau = tau
+        self.n_step = n_step
 
-        self.actor = Network(n_inputs, n_outputs).to(device)
-        self.optimizer = OrthAdam(self.actor.parameters(), lr=self.lr, weight_decay=1e-4)
-        self.memory = ReplayMemory(memory_size, self.batch_size, n_inputs)
+        self.actor = Network(n_inputs, hidden, n_outputs).to(device)
+        self.actor_target = Network(n_inputs, hidden, n_outputs).to(device)
+        self.actor_target.load_state_dict(self.actor_target.state_dict())
+        self.optimizer = optim.OrthAdam(self.actor.parameters(), lr=self.lr)
+        self.memory = ReplayMemory(memory_size, self.batch_size, n_inputs, n_step=n_step, gamma=self.gamma)
 
     def update(self):
 
@@ -171,15 +200,18 @@ class Agent:
 
         Q_value = self.actor(state).gather(1, action.long())
 
-        Q_next = self.actor(next_state).argmax(dim=1, keepdim=True).detach()
+        Q_next = torch.max(self.actor_target(next_state), dim=1, keepdim=True)[0].detach()
 
-        Q_target = reward + (self.gamma * Q_next * mask).detach()
+        Q_target = (reward + self.gamma**self.n_step * Q_next * mask).detach()
 
         loss = (Q_value - Q_target).pow(2).mean() # MSE loss
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        for actor_weight, target_weight in zip(self.actor.parameters(), self.actor_target.parameters()):
+            target_weight.data.copy_((1 - self.tau) * target_weight.data + self.tau * actor_weight.data)
 
         return loss.item()
 
@@ -194,7 +226,7 @@ class Agent:
             truncated = False
             state, _ = self.env.reset()
             
-            if np.random.uniform(size=1) >= self.epsilon:
+            if np.random.uniform(size=1) >= self.epsilon and len(self.memory) >= self.batch_size:
                 with torch.no_grad():
                     self.actor.eval()
                     action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
@@ -202,17 +234,19 @@ class Agent:
             else:
                 action = self.env.action_space.sample()
 
-            while not done or truncated:
+            while not done and not truncated:
 
                 next_state, reward, done, truncated, _ = self.env.step(action)
 
-                if np.random.uniform(size=1) >= self.epsilon:
+                if np.random.uniform(size=1) >= self.epsilon and len(self.memory) >= self.batch_size:
                     with torch.no_grad():
                         self.actor.eval()
                         next_action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
                         self.actor.train()
                 else:
                     next_action = self.env.action_space.sample()
+                    if len(self.memory) >= self.batch_size:
+                        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
 
                 rewards.append(reward)
 
@@ -225,11 +259,11 @@ class Agent:
                     done=done,
                 )
 
-                if len(self.memory) >= self.memory.capacity - 1:
+                if len(self.memory) >= self.batch_size:
                     loss = self.update()
-                    self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:
                     loss = 1
+                
                 losses.append(loss)
                 state = next_state
                 action = next_action
@@ -261,15 +295,16 @@ class Agent:
 
             done = False
             state, _ = self.env.reset()
+            truncated = False
 
             j = 0
             
             with torch.no_grad():
                 action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()
 
-            while not done:
+            while not done and not truncated:
 
-                next_state, _, done, _, _ = self.env.step(action)
+                next_state, _, done, truncated, _ = self.env.step(action)
 
                 with torch.no_grad():
                     next_action = self.actor(torch.FloatTensor(state).to(device).unsqueeze(0)).argmax(dim=-1).detach().cpu().item()

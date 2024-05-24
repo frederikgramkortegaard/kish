@@ -5,6 +5,7 @@ import sys
 import torch
 import torch.distributions as dist
 import math
+from collections import deque
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,10 +40,12 @@ def Orthonorm_weight(weight):
 # Class for storing transition memories
 # also includes functions for batching, both randomly and according to index, which we need for nstep learning
 class ReplayMemory:
-    def __init__(self, capacity, batch_size, input, n_outputs):
+    def __init__(self, capacity, batch_size, input, n_outputs, n_step, gamma):
         self.capacity = capacity
         self.mem_counter = 0
         self.mem_size = 0
+        self.n_step = n_step
+        self.gamma = gamma
 
         self.state_memory = torch.zeros((self.capacity, input), dtype=torch.float32).to(
             device
@@ -57,6 +60,7 @@ class ReplayMemory:
         self.terminal_memory = torch.zeros(self.capacity, dtype=torch.float32).to(
             device
         )
+        self.n_mem = deque(maxlen=n_step)
         self.max_size = self.capacity
         self.batch_size = batch_size
         self.index = 0
@@ -65,7 +69,7 @@ class ReplayMemory:
     # Stores a transition, while checking for the n-step value passed
     # if the n-step buffer is not larger than n, we only store the transition there
     def store_transition(self, state, action, reward, state_, done):
-
+        
         state = torch.tensor(state).to(device)
         action = torch.tensor(action).to(device)
         reward = torch.tensor(reward).to(device)
@@ -76,6 +80,26 @@ class ReplayMemory:
         else:
             done = 1
         done = torch.tensor(done).to(device)
+
+        self.n_mem.append((state, action, reward, state_, done))
+        if len(self.n_mem) < self.n_mem.maxlen:
+            return
+
+        # Calculate n_step reward
+        temp = self.n_mem.copy()
+        state, action, rew, _, _ = temp[0]
+        sum_reward = 0
+        for i in range(len(temp)):
+            if i == 0:
+                sum_reward += rew
+                continue
+            _, _, rew, state_, done = temp[i]
+            if done:
+                sum_reward += rew * self.gamma**i
+                break
+            sum_reward += rew * self.gamma**i
+
+        reward = sum_reward
 
         self.state_memory[self.index] = state
         self.action_memory[self.index] = action
@@ -108,12 +132,12 @@ class ReplayMemory:
 
 
 class Actor(nn.Module):
-    def __init__(self, n_inputs, n_outputs):
+    def __init__(self, n_inputs, n_outputs, hidden_dim):
         super(Actor, self).__init__()
 
         self.inputs = n_inputs
         self.outputs = n_outputs
-        self.hidden_dim = 256
+        self.hidden_dim = hidden_dim
 
         self.fc1 = nn.Linear(self.inputs, self.hidden_dim)
         self.fc1.weight.data.copy_(Orthonorm_weight(self.fc1.weight))
@@ -133,12 +157,12 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, n_inputs, n_actions):
+    def __init__(self, n_inputs, n_actions, hidden_dim):
         super(Critic, self).__init__()
 
         self.inputs = n_inputs
         self.actions = n_actions
-        self.hidden_dim = 256
+        self.hidden_dim = hidden_dim
 
         self.fc1 = nn.Linear(self.inputs + self.actions, self.hidden_dim)
         self.fc1.weight.data.copy_(Orthonorm_weight(self.fc1.weight))
@@ -166,6 +190,8 @@ class Agent:
         n_outputs,
         batch_size,
         memory_size,
+        hidden_dim,
+        n_step,
     ):
         self.env = env
         self.lr = lr
@@ -178,20 +204,23 @@ class Agent:
         self.temp.to(device)
         self.entropy_target = -torch.tensor(n_outputs)
 
-        self.actor = Actor(n_inputs, n_outputs).to(device)
-        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
+        self.actor = Actor(n_inputs, n_outputs, hidden_dim).to(device)
+        
+        self.critic1 = Critic(n_inputs, n_outputs, hidden_dim).to(device)
+        self.critic2 = Critic(n_inputs, n_outputs, hidden_dim).to(device)
 
-        self.critic1 = Critic(n_inputs, n_outputs).to(device)
-        self.critic2 = Critic(n_inputs, n_outputs).to(device)
-        self.critic1_target = Critic(n_inputs, n_outputs).to(device)
-        self.critic2_target = Critic(n_inputs, n_outputs).to(device)
+        self.critic1_target = Critic(n_inputs, n_outputs, hidden_dim).to(device)
+        self.critic2_target = Critic(n_inputs, n_outputs, hidden_dim).to(device)
+
         self.critic2_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
+        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
         self.optim2 = OrthAdam(self.critic1.parameters(), lr, amsgrad=True)
         self.optim3 = OrthAdam(self.critic2.parameters(), lr, amsgrad=True)
         self.optim4 = OrthAdam([self.temp], lr, amsgrad=True)
-        self.memory = ReplayMemory(memory_size, batch_size, n_inputs, n_outputs)
+
+        self.memory = ReplayMemory(memory_size, batch_size, n_inputs, n_outputs, n_step, gamma)
 
     def update_critic_(self, critic, optim, state, action, reward, next_state, mask):
         Q_values = critic(state, action)
@@ -213,21 +242,7 @@ class Agent:
             v = mask * (q - self.temp * a_log_prob)
             Q_target = reward + self.gamma * v
 
-        ortholoss = 0
-        coloumn1 = critic.fc1.weight.t()[:-1, :]
-        coloumn2 = critic.fc1.weight.t()[1:, :]
-        if coloumn1.shape[0] != 0 and coloumn2.shape[0] != 0:
-            ortholoss += (coloumn1 * coloumn2).sum(dim=-1).abs_().mean()
-
-        ortholoss += (
-            (torch.sqrt((self.critic1.fc1.weight.t() ** 2).sum(-1, keepdim=True)) - 1)
-            .pow(2)
-            .mean()
-        )
-
-        loss = (
-            torch.mean(0.5 * (Q_values - Q_target).pow(2)) + 0.01 * ortholoss
-        )  # Equation 5 from SAC
+        loss = torch.mean(0.5 * (Q_values - Q_target).pow(2)) # Equation 5 from SAC
 
         optim.zero_grad()
         loss.backward()
@@ -262,28 +277,13 @@ class Agent:
         q_2 = self.critic2(state, actions)
         q = torch.min(q_1, q_2)
 
-        ortholoss = 0
-        coloumn1 = self.actor.fc1.weight.t()[:-1, :]
-        coloumn2 = self.actor.fc1.weight.t()[1:, :]
-        if coloumn1.shape[0] != 0 and coloumn2.shape[0] != 0:
-            ortholoss += (coloumn1 * coloumn2).sum(dim=-1).abs_().mean()
-
-        ortholoss += (
-            (torch.sqrt((self.actor.fc1.weight.t() ** 2).sum(-1, keepdim=True)) - 1)
-            .pow(2)
-            .mean()
-        )
-        loss = (
-            self.temp.detach() * a_log_prob - q
-        ).mean() + 0.01 * ortholoss  # Update with equation 9 from SAC paper
+        loss = (self.temp.detach() * a_log_prob - q).mean() # Update with equation 9 from SAC paper
 
         self.optim1.zero_grad()
         loss.backward()
         self.optim1.step()
 
-        alpha_loss = (
-            -self.temp * (a_log_prob + self.entropy_target).detach()
-        ).mean()  # Update alpha / tempature parameter with equation 18 from SAC paper
+        alpha_loss = (-self.temp * (a_log_prob + self.entropy_target).detach()).mean()  # Update alpha / tempature parameter with equation 18 from SAC paper
 
         self.optim4.zero_grad()
         alpha_loss.backward()
@@ -327,7 +327,7 @@ class Agent:
                     action = torch.tanh(u)
                     self.actor.train()
 
-                if render and len(self.memory) > 6000:
+                if render and len(self.memory) > self.batch_size:
                     self.env.render()
 
                 next_state, reward, done, truncated, _ = self.env.step(
@@ -340,9 +340,10 @@ class Agent:
                 )
 
                 rewards.append(reward)
+
                 self.memory.store_transition(state, action, reward, next_state, done)
 
-                if len(self.memory) > 6000:
+                if len(self.memory) > self.batch_size:
                     loss = self.update().item()
                 else:
                     loss = 1
@@ -350,33 +351,15 @@ class Agent:
                 state = next_state
 
                 if (t % 100) == 0:
-                    ortholoss = 0
-                    coloumn1 = self.actor.fc1.weight.t()[:-1, :]
-                    coloumn2 = self.actor.fc1.weight.t()[1:, :]
-                    if coloumn1.shape[0] != 0 and coloumn2.shape[0] != 0:
-                        ortholoss += (coloumn1 * coloumn2).sum(dim=-1).abs_().mean()
-
                     print("timestep: ", t)
                     print("Reward: ", sum(rewards))
                     print("Loss: ", sum(losses))
                     print("Average reward: ", sum(rewards) / len(rewards))
                     print("Average loss: ", sum(losses) / len(losses))
-                    print(
-                        "actor weight norm: ",
-                        torch.sqrt(
-                            (self.actor.fc1.weight.t() ** 2).sum(-1, keepdim=True)
-                        )
-                        .mean()
-                        .item(),
-                    )
-                    print("actor weight linear dependence: ", ortholoss.item())
-                    print("actor weight mean: ", self.actor.fc1.weight.mean().item())
-                    print("actor weight std: ", self.actor.fc1.weight.std().item())
                     print()
                 if (t % 1000) == 0:
-                    yield (rewards, losses)
+                    yield (rewards)
                     rewards = []
-                    losses = []
 
                 j += 1
                 t += 1

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     )
 
     argparse.add_argument("--rendering", action='store_true')
-    argparse.add_argument("--Agent", type=str, default="SAC")
+    argparse.add_argument("--Agent", type=str, default="DQL_AttentionSplit")
     
     args = argparse.parse_args()
     if not os.path.isdir(args.resultspath):

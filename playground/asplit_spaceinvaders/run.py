@@ -57,7 +57,7 @@ if __name__ == "__main__":
         epsilon_decay=0.99985,
         epsilon_min=0.01,
     )
-
+    f_name = "AttentionSplit_SpaceInvaders"
     data = []
     for i, reward in zip(range(int(3e6)), agent.train(3e6, False)):
         data.append(reward)
@@ -66,5 +66,5 @@ if __name__ == "__main__":
                 {
                     "rew": data
                 },
-                f"{args.resultspath}/{wrap}_{}.pt",
+                f"{args.resultspath}/{wrap}_{f_name}.pt",
             )

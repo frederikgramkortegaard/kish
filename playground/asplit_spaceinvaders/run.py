@@ -24,8 +24,8 @@ from kish.utils import save_reinforcement_agent_output
 from model import Agent
 
 if __name__ == "__main__":
-    env = gym.make("SpaceInvadersNoFrameskip-v4", render_mode="rgb_array")
-    env.metadata["render_fps"] = 1000
+    env = gym.make("SpaceInvadersDeterministic-v4", render_mode="rgb_array")
+    env.metadata["render_fps"] = 10000
     space, _ = env.reset()
     state = cv2.resize(rgb2gray(crop(space, ((13, 13), (15, 25), (0, 0)))), (84, 84))
     wrap = gym.wrappers.HumanRendering(env)
@@ -36,15 +36,15 @@ if __name__ == "__main__":
         n_step=5,
         batch_size=32,
         mem_size=30000,
-        gamma=0.99,
-        lr=0.003,
+        gamma=0.999,
+        lr=3e-3,
         weight_decay=1e-2,
         height=state.shape[0],
         width=state.shape[1],
         n_outputs=env.action_space.n,
         hidden_dim=256,
         epsilon=1.0,
-        epsilon_decay=0.9995,
+        epsilon_decay=0.99985,
         epsilon_min=0.01,
     )
 

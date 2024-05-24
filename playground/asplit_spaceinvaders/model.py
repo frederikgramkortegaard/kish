@@ -19,7 +19,7 @@ sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-from modules.Optimizer import RNAdamWP
+from modules.Optimizer import OrthAdam
 from modules.Attentionsplit import AttentionSplit
 from modules.VBlinear import VBLinear
 
@@ -69,15 +69,26 @@ class ReplayMemory:
     def store_transition(self, state, new_state, action, reward, done, hidden):
 
         hidden = hidden.view(self.frames, self.n_hidden)
-        self.n_mem.append(reward)
+        
+        self.n_mem.append((state, action, reward, new_state, done, hidden))
         if len(self.n_mem) < self.n_mem.maxlen:
             return
 
         # Calculate n_step reward
         temp = self.n_mem.copy()
-        temp.reverse()
-        for rew in temp:
-            reward = reward + self.gamma * rew
+        state, action, rew, _, _, hidden = temp[0]
+        sum_reward = 0
+        for i in range(len(temp)):
+            if i == 0:
+                sum_reward += rew
+                continue
+            _, _, rew, new_state, done, _ = temp[i]
+            if done:
+                sum_reward += rew * self.gamma**i
+                break
+            sum_reward += rew * self.gamma**i
+
+        reward = sum_reward
 
         state = state.to(device)
         new_state = new_state.to(device)
@@ -148,7 +159,7 @@ class Network(nn.Module):
                 nn.init.normal_(module.weight, 0, math.sqrt(2.0 / n))  # Microsoft Init
 
         # Forward sequence
-        self.encoder = AttentionSplit(256, 256, 4)
+        self.encoder = AttentionSplit(256, 256, 8)
 
         self.action = VBLinear(256, self.actions)
 
@@ -206,10 +217,11 @@ class Agent:
         self.epsilon_min = epsilon_min
 
         self.actor = Network(n_outputs).to(device)
-        self.optim1 = RNAdamWP(
+        self.optim1 = OrthAdam(
             self.actor.parameters(),
             lr,
             weight_decay=weight_decay,
+            amsgrad=True,
         )
 
         self.actor_target = Network(n_outputs).to(device)
@@ -243,7 +255,7 @@ class Agent:
         Q_vals = a.gather(1, action.long())
 
         an, _ = self.actor_target(next_state, next_hidden)
-        Q_next = an.argmax(dim=1).detach().unsqueeze(-1)
+        Q_next = an.max(dim=1, keepdim=True)[0].detach().unsqueeze(-1)
 
         Q_target = reward + (self.gamma * Q_next * mask).detach()
 
@@ -287,9 +299,6 @@ class Agent:
                 stacked_state[i-1].flat[indices] = 0
                 stacked_state[i-1] = stacked_state[i-1].reshape(h, w)
                 stacked_state[i] = np.maximum(stacked_state[i], stacked_state[i-1])
-                #plt.imshow(stacked_state[i], cmap="gray")
-                #plt.draw()
-                #plt.pause(0.00000000000000000001)
 
         return torch.FloatTensor(stacked_state), stacked_frames
 
@@ -327,18 +336,18 @@ class Agent:
             prev_hiddens = hiddens.clone()
             while not done and not truncated:
 
-
-                if np.random.uniform(size=1) >= self.epsilon:
-                    with torch.no_grad():
-                        self.actor.eval()
-                        action, hiddens = self.actor(
-                            torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
-                        )
-                        action = action.argmax(dim=-1).detach().cpu().item()
-                        self.actor.train()
-                else:
-                    action = self.env.action_space.sample()
-                    hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * state.std()
+                if j % self.frames == 0:
+                    if np.random.uniform(size=1) >= self.epsilon:
+                        with torch.no_grad():
+                            self.actor.eval()
+                            action, hiddens = self.actor(
+                                torch.FloatTensor(state).to(device).unsqueeze(0), hiddens
+                            )
+                            action = action.argmax(dim=-1).detach().cpu().item()
+                            self.actor.train()
+                    else:
+                        action = self.env.action_space.sample()
+                        hiddens += torch.randn(hiddens.numel(), device=device).view(hiddens.shape) * state.std()
 
 
                 next_state, reward, done, truncated, info = self.env.step(action)
@@ -372,7 +381,7 @@ class Agent:
                 )
                 prev_hiddens = hiddens
 
-                if len(self.memory) >= self.memory.capacity - 1:
+                if len(self.memory) >= self.batch_size:
                     loss = self.update().item()
                     self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
                 else:

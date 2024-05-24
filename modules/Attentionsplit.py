@@ -36,13 +36,8 @@ class AttentionSplit(nn.Module):
         )
         nn.init.normal_(self.head_weight, 0, math.sqrt(2 / na))
 
-        self.last_conv = nn.Conv2d(
-            1,
-            self.n_heads,
-            kernel_size=int(self.n_heads - 1),
-            padding=int((self.n_heads - 1) / 2),
-        )
-        nn.init.normal_(self.last_conv.weight, 0, math.sqrt(2 / (self.n_heads - 1)))
+        self.last = nn.Linear(hidden_size, hidden_size)
+        nn.init.normal_(self.last.weight, 0, math.sqrt(2 / (math.pow(hidden_size, 2))))
 
         self.dropout = nn.Dropout(0.1)
 
@@ -126,17 +121,7 @@ class AttentionSplit(nn.Module):
                 temporals = self.g(combined_outputs)
                 context_window.append(temporals)
 
-        outputs = torch.cat(output_list, dim=1).view(bs, 1, ls, self.hidden_size)
-        conv_outputs = self.f(self.last_conv(outputs))
-
-        for i in range(conv_outputs.shape[1]):
-            if i == 0:
-                continue
-            conv_outputs[:, i, :, :] = self.g(
-                conv_outputs[:, i, :, :] - conv_outputs[:, i - 1, :, :]
-            )  # Suppose these activations are results of Gaussian kernels, we then take the DAG across heads
-        outputs = self.f(
-            self.layer_norm(conv_outputs[:, -1, :, :].view(bs, ls, self.hidden_size))
-        )
+        outputs = torch.cat(output_list, dim=1).view(-1 , self.hidden_size)
+        outputs = self.f(self.last(outputs)).view(bs, ls, -1)
 
         return outputs, torch.stack(context_window, dim=1)

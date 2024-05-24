@@ -61,5 +61,5 @@ if __name__ == "__main__":
     for file in os.listdir(args.results):
         if file.endswith('.pt'):
             results = torch.load(os.path.join(args.results, file))
-            generate_graph(results, file.split('_')[0], args.show, args.save, args.graph_path, output_name=file+'_'+str(time.time()), title="(no augments)" if "no_augments" in file else "(with augments)")
+            generate_graph(results, file.split('_')[0], args.show, args.save, args.graph_path, output_name=file+'_'+str(time.time()), title="")
 

@@ -7,23 +7,33 @@ import gymnasium as gym
 import cv2
 from skimage.util import crop
 from skimage.color import rgb2gray
+import torch
+import argparse
 
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
 
-# Meta
-from kish.classes import Reinforcement
-from kish.graphing import live_report_reinforcement_agent
-
-from kish.runners import train_reinforcement_agent, iterative_train_reinforcement_agent
-from kish.utils import save_reinforcement_agent_output
-
 # Model Specifications
 from model import Agent
 
 if __name__ == "__main__":
+
+    argparse = argparse.ArgumentParser()
+    argparse.add_argument(
+        "-resultspath",
+        type=str,
+        default=f"{os.path.dirname(os.path.abspath(__file__))}/results",
+    )
+
+    argparse.add_argument("--rendering", action='store_true')
+    argparse.add_argument("--Agent", type=str, default="SAC")
+    
+    args = argparse.parse_args()
+    if not os.path.isdir(args.resultspath):
+        os.mkdir(args.resultspath)
+    
     env = gym.make("SpaceInvadersDeterministic-v4", render_mode="rgb_array")
     env.metadata["render_fps"] = 10000
     space, _ = env.reset()
@@ -48,8 +58,13 @@ if __name__ == "__main__":
         epsilon_min=0.01,
     )
 
-    live_report_reinforcement_agent(
-        iterative_train_reinforcement_agent(
-            agent, Reinforcement.TrainingInput(1e7, True)
-        )
-    )
+    data = []
+    for i, reward in zip(range(int(3e6)), agent.train(3e6, False)):
+        data.append(reward)
+        if i % 9 == 0 and i != 0:
+            torch.save(
+                {
+                    "rew": data
+                },
+                f"{args.resultspath}/{wrap}_{}.pt",
+            )

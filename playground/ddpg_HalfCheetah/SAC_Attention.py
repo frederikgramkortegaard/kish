@@ -12,7 +12,7 @@ sys.path.append(
 )
 
 from modules.Attentionsplit import AttentionSplit
-from modules.Optimizer import RNAdamWP as OrthAdam
+from modules.Optimizer import OrthAdam
 
 device = torch.device("cuda")
 
@@ -78,6 +78,23 @@ class ReplayMemory:
     def store_transition(self, state, action, reward, state_, done, hidden):
 
         hidden = hidden.view(self.frames, self.n_hidden)
+
+        self.n_mem.append((state, action, reward, state_, done, hidden))
+        if len(self.n_mem) < self.n_mem.maxlen:
+            return
+
+        # Calculate n_step reward
+        temp = self.n_mem.copy()
+        state, action, rew, _, _, hidden = temp[0]
+        for i in range(len(temp)):
+            if i == 0:
+                reward += rew
+                continue
+            _, _, rew, state_, done, _ = temp[i]
+            if done:
+                reward += rew * self.gamma**i
+                break
+            reward += rew * self.gamma**i
 
         reward = torch.tensor(reward).to(device)
 
@@ -206,7 +223,7 @@ class Agent:
         self.entropy_target = -torch.tensor(n_outputs)
 
         self.actor = Actor(n_inputs, n_outputs, self.hidden_dim, self.frames).to(device)
-        self.optim1 = OrthAdam(self.actor.parameters(), lr)
+        self.optim1 = OrthAdam(self.actor.parameters(), lr, amsgrad=True)
 
         self.critic1 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
         self.critic2 = Critic(n_inputs, n_outputs, self.hidden_dim).to(device)
@@ -217,9 +234,9 @@ class Agent:
         self.critic1_target.load_state_dict(self.critic1.state_dict())
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.optim2 = OrthAdam(self.critic1.parameters(), lr)
-        self.optim3 = OrthAdam(self.critic2.parameters(), lr)
-        self.optim4 = OrthAdam([self.temp], lr)
+        self.optim2 = OrthAdam(self.critic1.parameters(), lr, amsgrad=True)
+        self.optim3 = OrthAdam(self.critic2.parameters(), lr, amsgrad=True)
+        self.optim4 = OrthAdam([self.temp], lr, amsgrad=True)
 
         self.memory = ReplayMemory(
             capacity=memory_size,

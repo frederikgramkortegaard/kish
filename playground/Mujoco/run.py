@@ -28,6 +28,9 @@ if __name__ == "__main__":
     if not os.path.isdir(args.resultspath):
         os.mkdir(args.resultspath)
     
+
+    import time
+    start_time = time.time()
         
     envi = gymnasium.make("HalfCheetah-v4", render_mode="rgb_array")
     agent = SAC_agent(
@@ -42,9 +45,6 @@ if __name__ == "__main__":
         n_step=5
     )
 
-    import time
-
-    start_time = time.time()
 
     print("Starting SAC (No AttentionSplit)")
     

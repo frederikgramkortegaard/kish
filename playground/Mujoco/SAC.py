@@ -13,7 +13,7 @@ sys.path.append(
 from modules.Optimizer import OrthAdam
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("SAC.py, using device", "cuda" if torch.cuda.is_available() else "cpu")
 
 # Initializes weights with orthonormal weights row-wise
 def Orthonorm_weight(weight):
@@ -358,7 +358,7 @@ class Agent:
                     print("Average loss: ", sum(losses) / len(losses))
                     print()
                 if (t % 1000) == 0:
-                    yield (rewards)
+                    yield sum(rewards) / len(rewards)
                     rewards = []
 
                 j += 1

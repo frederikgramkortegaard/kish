@@ -124,7 +124,6 @@ class OrthAdam(torch.optim.Optimizer):
                     step_size = group["lr"] / bias_correction1
 
                     # Inspirered by the AdamP approach, we try to retrify the learning rate decay, owing to loss of perpenducilarity between gradients and weights,
-                    # using Gram-Schmidt process for orthonormal projection instead of orthogonal projection
                     p_flat = p.data.flatten(0)
                     update_flat = update.flatten(0)
                     if (torch.nn.functional.cosine_similarity(p_flat, update_flat, dim=0).abs().max() < 0.1):

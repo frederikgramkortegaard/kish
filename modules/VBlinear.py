@@ -7,7 +7,7 @@ import math
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-# Variational Bayesian linear layer implementation
+# Variational Bayesian linear layer implementation based on the implementation provided by Melih Kandemir 
 class VBLinear(nn.Module):
 
     def __init__(self, in_dim, out_dim):

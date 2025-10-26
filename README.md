@@ -5,7 +5,9 @@
 :pushpin: [Thesis](https://github.com/frederikgram/kish/blob/master/Thesis.pdf)
 :pushpin: [Code Examples](https://github.com/frederikgramkortegaard/kish/tree/master/playground)
 
-**AttentionSplit** is a hybrid neural network architecture designed to enhance long- and short-term retention in temporal data tasks. This project also includes **OrthAdam**, a novel Adam optimizer variant inspired by AdamP, aimed at improving convergence and maximum achievable accuracy. The framework has been tested across reinforcement learning, image classification, and sequence prediction tasks.
+**AttentionSplit** is a hybrid neural network architecture designed to enhance long- and short-term retention in temporal data tasks. 
+
+This project also includes **OrthAdam**, a novel Adam optimizer variant inspired by AdamP, aimed at improving convergence and maximum achievable accuracy. The framework has been tested across reinforcement learning, image classification, and sequence prediction tasks.
 
 For full details, refer to our Thesis which describes the theory, experiments, and evaluation in depth.
 

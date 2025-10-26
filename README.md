@@ -39,8 +39,7 @@ For full details, refer to our Thesis which describes the theory, experiments, a
 All experiments can be found in the `playground` folder. You can run individual tests or use the main runner:
 
     # Example: Run a Mujoco HalfCheetah test
-    python playground/run.py --env HalfCheetah-v4 --model AttentionSplit
-
+    python playground/<test_name>/test_<test_name_.py --OPTS [READ SPECIFIC TEST FILE]
 Example using OrthAdam in a training loop:
 
     from modules.Optimizer import OrthAdam

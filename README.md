@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-:pushpin: [Thesis](https://github.com/frederikgram/kish/blob/master/Thesis.pdf)
+:pushpin: [Thesis](https://github.com/frederikgramkortegaard/kish/blob/master/Thesis.pdf)
 :pushpin: [Code Examples](https://github.com/frederikgramkortegaard/kish/tree/master/playground)
 
 **AttentionSplit** is a hybrid neural network architecture designed to enhance long- and short-term retention in temporal data tasks. 
